@@ -165,6 +165,17 @@ static void test_api(void)
     CHECK(birriasdr_get_center_freq(&dev) == maximum);
     CHECK(birriasdr_set_center_freq(&dev, UINT64_C(2437123456)) == 0);
     CHECK(birriasdr_get_center_freq(&dev) == UINT64_C(2437123456));
+    id = bs_lookup_id(0x0e8d, 0x7961);
+    CHECK(id && id->qualified && id->min_frequency == UINT64_C(2190000000) && !id->max_frequency);
+    dev.min_frequency = id->min_frequency;
+    CHECK(birriasdr_get_tuning_range(&dev, &minimum, &maximum) == 0);
+    CHECK(minimum == UINT64_C(2190000000) && maximum == UINT64_C(2610000000));
+    CHECK(birriasdr_set_center_freq(&dev, minimum - 1) == BIRRIASDR_ERROR_UNSUPPORTED);
+    CHECK(birriasdr_get_center_freq(&dev) == UINT64_C(2437123456));
+    CHECK(birriasdr_set_center_freq(&dev, minimum) == 0);
+    dev.min_frequency = 0;
+    CHECK(birriasdr_get_tuning_range(&dev, &minimum, &maximum) == 0);
+    CHECK(minimum == UINT64_C(2156000000));
     CHECK(birriasdr_set_sample_rate(&dev, 0) == BIRRIASDR_ERROR_UNSUPPORTED);
     CHECK(birriasdr_set_sample_rate(&dev, 80000000) == BIRRIASDR_ERROR_UNSUPPORTED);
     CHECK(birriasdr_get_sample_rate(&dev) == 40000000);

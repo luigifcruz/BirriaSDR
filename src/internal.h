@@ -50,6 +50,8 @@ struct bs_usb_id {
     const char *name;
     const struct bs_backend *backend;
     bool qualified;
+    /* Board tuning bounds; zero keeps the backend's. */
+    uint64_t min_frequency, max_frequency;
 };
 
 struct birriasdr_dev {
@@ -59,6 +61,7 @@ struct birriasdr_dev {
     int lock_fd;
     uint8_t ep_in, ep_command, ep_download;
     const struct bs_backend *backend;
+    uint64_t min_frequency, max_frequency;
     struct bs_io io;
     atomic_uint run_state;
     /* Serializes whole register procedures, not individual USB transfers.

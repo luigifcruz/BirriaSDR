@@ -125,14 +125,15 @@ static void control_failed(birriasdr_dev_t *dev, int error, enum birriasdr_stage
 }
 
 /* Report backend command limits rather than inferring them from a Wi-Fi channel
- * table. The bounds describe programming support, not measured sensitivity.
+ * table, narrowed by any measured board bounds. The bounds describe programming
+ * support, not measured sensitivity.
  */
 int birriasdr_get_tuning_range(const birriasdr_dev_t *dev, uint64_t *minimum, uint64_t *maximum)
 {
     if (!dev || !minimum || !maximum)
         return BIRRIASDR_ERROR_INVALID;
-    *minimum = dev->backend->min_frequency;
-    *maximum = dev->backend->max_frequency;
+    *minimum = dev->min_frequency ? dev->min_frequency : dev->backend->min_frequency;
+    *maximum = dev->max_frequency ? dev->max_frequency : dev->backend->max_frequency;
     return *minimum && *maximum >= *minimum ? 0 : BIRRIASDR_ERROR_UNSUPPORTED;
 }
 
@@ -155,6 +156,11 @@ int birriasdr_set_center_freq(birriasdr_dev_t *dev, uint64_t frequency)
     result = dev->backend->validate(frequency, dev->rate, &dev->gain);
     if (result < 0)
         goto done;
+    if ((dev->min_frequency && frequency < dev->min_frequency) ||
+        (dev->max_frequency && frequency > dev->max_frequency)) {
+        result = BIRRIASDR_ERROR_UNSUPPORTED;
+        goto done;
+    }
     if (state == BS_RUNNING) {
         if (!(dev->backend->capabilities & BIRRIASDR_CAP_LIVE_TUNING) ||
             !dev->backend->change_frequency) {

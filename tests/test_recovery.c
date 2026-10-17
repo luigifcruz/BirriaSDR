@@ -157,12 +157,13 @@ static int recover(struct capture *run, uint64_t frequency, bool reopen)
 /* Own libusb only in the receiver child; the supervisor has no device handle. */
 static int run_tests(int trigger_fd, bool automatic)
 {
-    static const uint64_t frequencies[] = {2156000000, 2437000000, 2610000000};
+    uint64_t frequencies[3] = {0, UINT64_C(2437000000), 0};
     int result, close_result;
     struct capture run = {0};
     run.trigger_fd = trigger_fd;
     run.automatic = automatic;
     result = birriasdr_open(&run.dev, 0);
+    if (!result) result = birriasdr_get_tuning_range(run.dev, &frequencies[0], &frequencies[2]);
     for (unsigned trial = 0; trial < 12 && !result; ++trial) {
         result = birriasdr_set_center_freq(run.dev, UINT64_C(2437000000));
         if (!result) result = force_overrun(&run, trial % 2 == 0);

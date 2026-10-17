@@ -14,11 +14,13 @@
 
 /* Enumerate known identities without assuming identical RF wiring across boards. */
 static const struct bs_usb_id devices[] = {
-    {0x3574, 0x6211, "COMFAST MT7961 / MT7972", &bs_mt7921_backend, true},
-    {0x0e8d, 0x7961, "MT7921 USB (board not qualified)", &bs_mt7921_backend, false},
-    {0x0e8d, 0x7925, "MT7925 USB (not implemented)", &bs_mt7925_backend, false},
-    {0x0846, 0x9050, "Netgear A8500 MT7925 (not implemented)", &bs_mt7925_backend, false},
-    {0x0846, 0x9072, "Netgear A9000 MT7925 (not implemented)", &bs_mt7925_backend, false}
+    {0x3574, 0x6211, "COMFAST MT7961 / MT7972", &bs_mt7921_backend, true, 0, 0},
+    /* The tested EDUP AX3000 cannot calibrate below 2179 MHz. */
+    {0x0e8d, 0x7961, "MediaTek MT7961 / MT7972, generic ID", &bs_mt7921_backend, true,
+     UINT64_C(2190000000), 0},
+    {0x0e8d, 0x7925, "MT7925 USB (not implemented)", &bs_mt7925_backend, false, 0, 0},
+    {0x0846, 0x9050, "Netgear A8500 MT7925 (not implemented)", &bs_mt7925_backend, false, 0, 0},
+    {0x0846, 0x9072, "Netgear A9000 MT7925 (not implemented)", &bs_mt7925_backend, false, 0, 0}
 };
 
 /* A NULL match excludes arbitrary Wi-Fi devices from probing or register writes. */
@@ -225,6 +227,8 @@ static int claim_device(birriasdr_dev_t *dev, libusb_device *usb, const struct b
     if (libusb_get_device_speed(usb) < LIBUSB_SPEED_SUPER)
         return BIRRIASDR_ERROR_UNSUPPORTED;
     dev->backend = id->backend;
+    dev->min_frequency = id->min_frequency;
+    dev->max_frequency = id->max_frequency;
     dev->frequency = dev->backend->default_frequency;
     dev->rate = dev->backend->default_rate;
     BS_TRY(lock_device(dev, id, usb));
