@@ -5,6 +5,13 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* macOS can delay USB completions long enough to drain 64 queued transfers. */
+#ifdef __APPLE__
+#define BS_DEFAULT_DEPTH 256u
+#else
+#define BS_DEFAULT_DEPTH 64u
+#endif
+
 struct delivery {
     birriasdr_dev_t *dev;
     birriasdr_read_async_cb_t callback;
@@ -299,7 +306,7 @@ int bs_stream(birriasdr_dev_t *dev, birriasdr_read_async_cb_t callback,
     int result = BIRRIASDR_ERROR_NO_MEMORY;
     if (!dev || !callback)
         return BIRRIASDR_ERROR_INVALID;
-    if (!depth) depth = 64;
+    if (!depth) depth = BS_DEFAULT_DEPTH;
     if (!buffer_samples) buffer_samples = 16384;
     if (depth < 4 || depth > 256 || buffer_samples > 262144 || buffer_samples % BS_PACKET_SAMPLES)
         return BIRRIASDR_ERROR_INVALID;

@@ -119,7 +119,7 @@ int bs_reader_create(birriasdr_dev_t *dev, unsigned depth, struct bs_reader **ou
         return BIRRIASDR_ERROR_NO_MEMORY;
     reader->dev = dev;
     reader->depth = depth;
-    reader->capacity = depth * 8;
+    reader->capacity = depth < 64 ? depth * 8 : 512;
     if (pthread_mutex_init(&reader->mutex, NULL)) {
         free(reader);
         return BIRRIASDR_ERROR_IO;

@@ -286,7 +286,8 @@ int birriasdr_read_sync(birriasdr_dev_t *dev, int16_t *iq, uint32_t count,
 
 /** Stream until cancel_async, device loss, or an unrecovered hardware/protocol error.
  * Like librtlsdr, this blocks the calling thread while asynchronous USB reads
- * run. transfer_count=0 selects 64 queued transfers (allowed 4..256).
+ * run. transfer_count=0 selects 64 queued transfers, or 256 on macOS.
+ * Allowed values are 4..256.
  * buffer_samples=0 selects 16384; otherwise use a multiple of 2048, <=262144.
  * A final callback may be shorter. Cancellation drains submitted device
  * packets before returning; callbacks can still arrive after cancellation.
