@@ -27,12 +27,19 @@ struct bs_io {
     int (*write32)(void *, enum bs_space, uint32_t, uint32_t);
 };
 
+/* One contiguous tuning interval; backends list them in ascending order. */
+struct bs_band {
+    uint64_t min_frequency, max_frequency;
+};
+
 struct bs_backend {
     enum birriasdr_chipset chipset;
     const char *name;
     uint32_t capabilities;
     uint64_t default_frequency;
     uint64_t min_frequency, max_frequency;
+    const struct bs_band *bands; /* NULL means one band, min to max. */
+    unsigned band_count;
     uint32_t default_rate;
     int (*validate)(uint64_t frequency, uint32_t rate, const struct birriasdr_gain *gain);
     int (*identify)(birriasdr_dev_t *);
@@ -90,6 +97,7 @@ struct birriasdr_dev {
         bool gain_saved;
         uint32_t filter_baseline[4];
         bool filter_saved;
+        bool high_band;
     } mt7921;
     struct birriasdr_stream_stats stats;
 };

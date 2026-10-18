@@ -315,6 +315,34 @@ static void test_public_tuning(void)
     CHECK(mt_set_frequency(&dev, MT_RF_MAX_HZ) == BIRRIASDR_ERROR_STATE);
 }
 
+/* Crossing bands moves the VCO range, LO path and front end together, and the
+ * way back restores 2.4 GHz. Retunes within a band write no band fields.
+ */
+static void test_band_switch(void)
+{
+    struct model model;
+    birriasdr_dev_t dev;
+    size_t before;
+    initialize(&model, &dev);
+    dev.frequency = UINT64_C(5735000000);
+    CHECK(mt_configure_rf(&dev) == 0);
+    CHECK(get(&model, 16, 0xca8) == 0x072b3333);
+    CHECK(get(&model, 16, 0xcac) == 27526);
+    CHECK(get(&model, 16, 0x160) & (1u << 29));
+    CHECK(get(&model, 17, 0x160) & (1u << 29));
+    CHECK((get(&model, 16, 0xc00) & 0x3c) == 0x38);
+    before = model.written;
+    CHECK(mt_change_frequency(&dev, UINT64_C(5815000000)) == 0);
+    for (size_t i = before; i < model.written; ++i)
+        CHECK(model.writes[i].space == 16 && model.writes[i].address != 0xc00);
+    CHECK(mt_change_frequency(&dev, UINT64_C(2437000000)) == 0);
+    CHECK(get(&model, 16, 0xca8) == 0x0513bbbc);
+    CHECK(!(get(&model, 16, 0x160) & (1u << 29)));
+    CHECK(!(get(&model, 17, 0x160) & (1u << 29)));
+    CHECK((get(&model, 16, 0xc00) & 0x3c) == 0x28);
+    CHECK(mt_change_frequency(&dev, UINT64_C(3000000000)) == BIRRIASDR_ERROR_UNSUPPORTED);
+}
+
 /* Exercise both low fractional bits through normal startup and the live public
  * setter. A failed update must restore the previous fine word and API metadata,
  * not round the rollback to the old 18-bit grid. No physical resolution is tested.
@@ -355,5 +383,6 @@ int main(int argc, char **argv)
     test_retune();
     test_public_tuning();
     test_fine_tuning();
+    test_band_switch();
     return 0;
 }

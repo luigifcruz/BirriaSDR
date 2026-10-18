@@ -18,7 +18,7 @@
  *
  * A/B/C/D name the decoded PHY field groups, not four receive antennas. Their
  * individual contributions are not all characterized. The validated control
- * is the combined recipe below, using LNA 0..3, LPF 0..8 and digital 0..12.
+ * is the combined recipe below, using LNA 0..5, LPF 0..8 and digital 0..12.
  * These are raw indices, not dB. LPF gain changes the filter-stage gain, not
  * its bandwidth; writing a wider numeric code is not a wider RF passband.
  *
@@ -107,7 +107,7 @@ static int gain_transaction(birriasdr_dev_t *dev, const uint32_t before[4],
 static int gain_values(const struct birriasdr_gain *gain, uint32_t values[4])
 {
     uint32_t lna = gain->lna, lpf = gain->lpf, digital = gain->digital;
-    if (lna > 3 || lpf > 8 || digital > 12)
+    if (lna > 5 || lpf > 8 || digital > 12)
         return BIRRIASDR_ERROR_INVALID;
     values[0] = 7 | lna << 8 | lpf << 12 | lna << 16 | lpf << 20 | lna << 24 | lpf << 28;
     values[1] = digital << 24 | digital << 16;

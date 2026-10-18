@@ -293,7 +293,7 @@ static int select_receive_path(birriasdr_dev_t *dev)
 int mt_configure_rf(birriasdr_dev_t *dev)
 {
     uint32_t analog, crystal;
-    if (dev->frequency < MT_RF_MIN_HZ || dev->frequency > MT_RF_MAX_HZ || dev->rate != 40000000)
+    if (!mt_frequency_supported(dev->frequency) || dev->rate != 40000000)
         return BIRRIASDR_ERROR_UNSUPPORTED;
     BS_TRY(mt_rf_read(dev, MT_TOP_PORT, 0x2c, &analog));
     BS_TRY(bs_read32(dev, BS_MMIO, 0x02004600, &crystal));
@@ -302,5 +302,7 @@ int mt_configure_rf(birriasdr_dev_t *dev)
     BS_TRY(configure_clocks(dev));
     BS_TRY(initialize_chains(dev));
     BS_TRY(select_receive_path(dev));
+    /* Bias tables and the anchor tune have put every band field back to 2.4 GHz. */
+    dev->mt7921.high_band = false;
     return dev->frequency == MT_RF_ANCHOR_HZ ? 0 : mt_set_frequency(dev, dev->frequency);
 }

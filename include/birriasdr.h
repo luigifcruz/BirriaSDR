@@ -67,7 +67,7 @@ struct birriasdr_device_info {
 
 /** Raw hardware indices, deliberately distinct from calibrated gain in dB. */
 struct birriasdr_gain {
-    uint8_t lna;       /**< Tested MT7972 range 0..3. */
+    uint8_t lna;       /**< MT7972 range 0..5; 5 GHz needs 4..5 for full sensitivity. */
     uint8_t lpf;       /**< Filter-stage gain 0..8; does not select bandwidth. */
     uint8_t digital;   /**< Digital gain code 0..12. */
 };
@@ -171,14 +171,23 @@ uint32_t birriasdr_get_capabilities(const birriasdr_dev_t *dev);
 
 /** Return inclusive command limits in Hz. Returns UNSUPPORTED if unknown.
  * These are programming limits, not guaranteed RF sensitivity or passband
- * coverage. Safe during a read.
+ * coverage. The interval may contain gaps; use get_tuning_band for each
+ * contiguous band. Safe during a read.
  */
 int birriasdr_get_tuning_range(const birriasdr_dev_t *dev, uint64_t *minimum_hz,
                               uint64_t *maximum_hz);
 
+/** Return contiguous band `index` in Hz, starting at 0. Returns INVALID past the
+ * last band and UNSUPPORTED for a band this board cannot reach. Live retunes
+ * may cross bands. Safe during a read.
+ */
+int birriasdr_get_tuning_band(const birriasdr_dev_t *dev, uint32_t index,
+                              uint64_t *minimum_hz, uint64_t *maximum_hz);
+
 /** Set a requested center in Hz, without channel-number rounding or host mixing.
- * The MT7921 range is 2156000000..2610000000 Hz, inclusive, with nominal
- * 28.6102294921875 Hz hardware steps; frequency accuracy is uncalibrated.
+ * The MT7921 bands are 2156000000..2610000000 and 4500000000..6200000000 Hz,
+ * inclusive, with nominal 28.6102294921875 and 47.6837158203125 Hz hardware
+ * steps; frequency accuracy is uncalibrated. Requests in the gap are UNSUPPORTED.
  * While idle, stage the center for the next read. With CAP_LIVE_TUNING, apply it
  * during capture without restarting ICAP/DMA or downloading firmware. Calls
  * serialize with gain and lifecycle controls; startup/shutdown may return BUSY.
