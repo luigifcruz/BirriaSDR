@@ -88,6 +88,9 @@ For more detail, see:
 | Firmware | Original 1,632-byte RAM program. No vendor firmware and nothing flashed |
 | Host platforms | Linux, tested on a Raspberry Pi 5, and macOS, tested on an Apple Silicon Mac |
 
+The [supported devices](docs/supported-devices.md) page lists the tested boards,
+what works on each and how to add another one.
+
 ## Proof of concept
 
 **The [CyberEther](https://cyberether.org/) flowgraph in
