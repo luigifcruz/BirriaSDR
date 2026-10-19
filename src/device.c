@@ -167,6 +167,9 @@ int birriasdr_set_center_freq(birriasdr_dev_t *dev, uint64_t frequency)
             result = BIRRIASDR_ERROR_UNSUPPORTED;
             goto done;
         }
+        if (dev->backend->validate_change &&
+            (result = dev->backend->validate_change(dev, frequency)) < 0)
+            goto done;
         result = dev->backend->change_frequency(dev, frequency);
         if (result < 0) {
             control_failed(dev, result, BIRRIASDR_STAGE_RF);

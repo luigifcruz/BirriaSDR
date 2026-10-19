@@ -116,9 +116,17 @@ static int validate(uint64_t frequency, uint32_t rate, const struct birriasdr_ga
 {
     if (gain->lna > 3 || gain->lpf > 8 || gain->digital > 12)
         return BIRRIASDR_ERROR_INVALID;
-    if (frequency < MT_RF_MIN_HZ || frequency > MT_RF_MAX_HZ || rate != 40000000)
+    if (mt_band_of(frequency) == MT_BAND_NONE || rate != 40000000)
         return BIRRIASDR_ERROR_UNSUPPORTED;
     return 0;
+}
+
+/* The band profile is applied once per preparation, so a live change must stay
+ * in the prepared band. Rejecting here leaves the running capture untouched.
+ */
+static int validate_change(const birriasdr_dev_t *dev, uint64_t frequency)
+{
+    return mt_band_of(frequency) == mt_band_of(dev->frequency) ? 0 : BIRRIASDR_ERROR_UNSUPPORTED;
 }
 
 /* USB IDs identify a product, not necessarily its die revision. Read the digital
@@ -143,5 +151,6 @@ const struct bs_backend bs_mt7921_backend = {
     .identify = identify,
     .prepare = mt_prepare, .start = mt_start, .stop = mt_stop,
     .status = mt_status, .reset = mt_reset, .change_gain = mt_change_gain,
-    .change_frequency = mt_change_frequency
+    .change_frequency = mt_change_frequency,
+    .validate_change = validate_change
 };

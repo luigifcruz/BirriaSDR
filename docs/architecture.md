@@ -16,6 +16,7 @@ and the [MT7921 device reference](mt7921.md).
 | `src/chips/mt7921_tune.c` | Frequency encoding, oscillator calibration, live retuning and rollback, and wider research sweeps |
 | `src/chips/mt7921_gain.c` | Manual gain, field masks, readbacks and baseline restoration |
 | `src/chips/mt7921_filter.c` | Matched analog and digital receive bandwidth, verified application and baseline restoration |
+| `src/chips/mt7921_band.c` | 5 GHz and 6 GHz band profile, sub-band steps, and saving and restoring the fields it owns |
 | `src/chips/mt7921_capture.c` | Capture engine (ICAP) configuration, mailbox controls and backend registration |
 | `src/chips/mt7921_frame.c` | Parsing of original firmware events and conversion from raw14 to I/Q |
 | `src/chips/mt7925.c` | Explicitly unimplemented backend with no register writes |
@@ -49,7 +50,11 @@ chipset's native descriptors into the MT7921 parser.
    `change_gain` and sets `BIRRIASDR_CAP_LIVE_GAIN`, and the common layer
    serializes those calls. A tuning backend advertises `BIRRIASDR_CAP_TUNING`
    and provides its command bounds. If it also supports live changes, it
-   supplies `change_frequency` and sets `BIRRIASDR_CAP_LIVE_TUNING`. Document
+   supplies `change_frequency` and sets `BIRRIASDR_CAP_LIVE_TUNING`. A backend
+   whose valid centers are not all reachable live, such as another band,
+   supplies `validate_change`: its refusal returns before any hardware access
+   and leaves the capture running, whereas a `change_frequency` error stops the
+   acquisition. Document
    measured coverage separately from the command bounds, because a capability
    bit does not establish sensitivity.
 

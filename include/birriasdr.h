@@ -157,7 +157,7 @@ int birriasdr_get_device_info(uint32_t index, struct birriasdr_device_info *info
  * nonvolatile memory. Startup may reset USB to recover a previous failure;
  * a reset that invalidates the handle returns NO_DEVICE. A retained vendor
  * patch is rejected when reading.
- * On failure *dev is NULL. Currently only COMFAST 3574:6211 is qualified.
+ * On failure *dev is NULL. Qualified: COMFAST 3574:6211 and generic-ID 0e8d:7961 boards.
  */
 int birriasdr_open(birriasdr_dev_t **dev, uint32_t index);
 

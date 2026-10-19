@@ -214,7 +214,12 @@ static void test_api(void)
     CHECK(birriasdr_set_tuner_gain(&dev, 100) == BIRRIASDR_ERROR_UNSUPPORTED);
     CHECK(birriasdr_set_agc_mode(&dev, 1) == BIRRIASDR_ERROR_UNSUPPORTED);
     CHECK(birriasdr_set_tuner_bandwidth(&dev, 40000000) == BIRRIASDR_ERROR_UNSUPPORTED);
-    CHECK(birriasdr_set_center_freq(&dev, UINT64_C(5180000000)) == BIRRIASDR_ERROR_UNSUPPORTED);
+    CHECK(birriasdr_set_center_freq(&dev, UINT64_C(5180000000)) == 0);
+    CHECK(birriasdr_set_center_freq(&dev, UINT64_C(5925000000)) == 0);
+    CHECK(birriasdr_set_center_freq(&dev, UINT64_C(7125000000)) == 0);
+    CHECK(birriasdr_set_center_freq(&dev, UINT64_C(7125000001)) == BIRRIASDR_ERROR_UNSUPPORTED);
+    CHECK(birriasdr_set_center_freq(&dev, UINT64_C(5149999999)) == BIRRIASDR_ERROR_UNSUPPORTED);
+    CHECK(birriasdr_set_center_freq(&dev, UINT64_C(4000000000)) == BIRRIASDR_ERROR_UNSUPPORTED);
     CHECK(birriasdr_get_tuning_range(&dev, &minimum, &maximum) == 0);
     CHECK(birriasdr_get_capabilities(&dev) & BIRRIASDR_CAP_TUNING);
     CHECK(minimum == UINT64_C(2156000000) && maximum == UINT64_C(2610000000));

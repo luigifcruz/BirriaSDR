@@ -14,8 +14,8 @@ anything, try the rough [proof of concept](#proof-of-concept).
 >
 > This is experimental software. The tested board starts from a channel 6
 > initialization profile, and the library can tune anywhere from 2156 to
-> 2610 MHz. Sensitivity across that range, frequency accuracy and gain are not
-> calibrated. Use at your own risk.
+> 2610 MHz and, from that profile, 5150 to 7125 MHz. Sensitivity across those
+> ranges, frequency accuracy and gain are not calibrated. Use at your own risk.
 
 https://github.com/user-attachments/assets/64e9fbbd-1f16-4c7b-905c-5624b9c574b7
 
@@ -53,7 +53,9 @@ The tested hardware is the **COMFAST MT7961/MT7921AU dongle (`3574:6211`)**,
 which pairs an MT7961 digital die with an MT7972 analog die. By default the
 receiver is centered on Wi-Fi channel 6 (nominally 2437 MHz) and uses receive
 chain 0 at 40 million complex samples per second. The library can retune
-anywhere in the 2156 to 2610 MHz range, even while streaming. At 40 MSps it
+anywhere in the 2156 to 2610 MHz range, even while streaming. It can also start
+at a center from 5150 to 7125 MHz and retune within the 5 GHz or 6 GHz band,
+measured so far on the EDUP board only. At 40 MSps it
 pairs the **40 MHz analog filter with the matching digital bandwidth setting**.
 On the tested board, the measured noise spectrum falls about 3 dB at ±18 MHz.
 The filters do not fully reject signals outside the sampled span, so strong
@@ -70,8 +72,8 @@ For more detail, see:
 
 | Parameter | Current value |
 | --- | --- |
-| Hardware | COMFAST dongle `3574:6211`, or a board with MediaTek's generic ID `0e8d:7961`, with an MT7961 digital die and an MT7972 analog die |
-| Frequency tuning | 2156 to 2610 MHz, or 2190 to 2610 MHz on generic-ID boards, including live changes. Sensitivity across the range is unverified. No 5 GHz support yet |
+| Hardware | COMFAST dongle `3574:6211`, or a board with MediaTek's generic ID `0e8d:7961`, with an MT7961 digital die and an MT7972 analog die. See [docs/qualification-0e8d-7961.md](docs/qualification-0e8d-7961.md) for one tested generic-ID board |
+| Frequency tuning | 2156 to 2610 MHz (2190 to 2610 MHz on generic-ID boards), 5150 to 5925 MHz and 5925 to 7125 MHz, including live changes within a band. Sensitivity across the range is unverified. 5 GHz and 6 GHz are measured on the EDUP board only, see [5 GHz and 6 GHz](docs/mt7921.md#5-ghz-and-6-ghz) |
 | Tuning step | Nominally 28.61 Hz, using the full 20-bit fraction. Requests are in whole hertz with no Wi-Fi channel restriction. The physical response to fine steps is still unmeasured |
 | Sample rate | 40 MSps complex, fixed |
 | Sampled bandwidth | 40 MHz span with matching nominal 40 MHz analog and digital settings. See [filter characteristics](docs/mt7921.md#filtering) for rolloff and aliasing limits |
@@ -172,8 +174,7 @@ birriasdr_close(dev);
 ```
 
 This outline skips error handling, so check every return value as the example
-does. Frequencies are 64-bit values so the API can represent future 5 GHz
-operation. The raw gain codes are separate from the calibrated dB gain API,
+does. Frequencies are 64-bit values, which covers the 5 GHz and 6 GHz centers. The raw gain codes are separate from the calibrated dB gain API,
 which is reserved for later.
 
 The `read_async` function blocks the calling thread while a dedicated

@@ -43,6 +43,10 @@ struct bs_backend {
     int (*reset)(birriasdr_dev_t *);
     int (*change_gain)(birriasdr_dev_t *, bool manual, const struct birriasdr_gain *);
     int (*change_frequency)(birriasdr_dev_t *, uint64_t frequency);
+    /* Optional: reject a valid center that the running acquisition cannot reach
+     * live (for example another band) before any hardware access.
+     */
+    int (*validate_change)(const birriasdr_dev_t *, uint64_t frequency);
 };
 
 struct bs_usb_id {
@@ -90,6 +94,8 @@ struct birriasdr_dev {
         bool gain_saved;
         uint32_t filter_baseline[4];
         bool filter_saved;
+        uint32_t band_baseline[48];
+        bool band_saved;
     } mt7921;
     struct birriasdr_stream_stats stats;
 };

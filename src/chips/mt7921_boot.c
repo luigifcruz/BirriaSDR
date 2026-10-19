@@ -77,16 +77,18 @@ static int reset_hardware(birriasdr_dev_t *dev)
     return bs_poll32(dev, BS_UHW, 0x74000a20, 1u << 22, 1u << 22, 200);
 }
 
-/* Analog gain and bandwidth fields can survive WFSYS reset. Restore both saved
- * baselines first, but attempt every cleanup even when an earlier one fails.
+/* Analog gain, bandwidth and band fields can survive WFSYS reset. Restore every
+ * saved baseline first, but attempt every cleanup even when an earlier one fails.
  */
 int mt_reset(birriasdr_dev_t *dev)
 {
     int restore = mt_restore_gain(dev);
     int filter = mt_restore_filter(dev);
+    int band = mt_restore_band(dev);
     int reset = reset_hardware(dev);
     if (restore < 0) return restore;
-    return filter < 0 ? filter : reset;
+    if (filter < 0) return filter;
+    return band < 0 ? band : reset;
 }
 
 /* Prepare host-side WFDMA descriptor prefetch and scheduler quotas. "TX" here
