@@ -136,6 +136,43 @@ To pick a different center frequency, pass it in hertz:
 ./build/birria_rx --frequency 2437123456 off-channel.cs16 8000000 manual
 ```
 
+### Stream to SDR++
+
+The `birria_udp` example sends the same unshifted 14-bit samples as raw
+little-endian CS16 UDP datagrams. It targets the Network source that ships with
+SDR++. Configure SDR++ before you start the receiver:
+
+- Select the **Network** source.
+- Set the protocol to **UDP**, the host to `127.0.0.1` and the port to `1234`.
+- Set the sample type to **Int16** and the sample rate to `40000000`.
+- Start the SDR++ source.
+
+Then start the sender:
+
+```sh
+./build/birria_udp --frequency 2437000000 --manual
+```
+
+The sender uses device 0, destination `127.0.0.1:1234`, 2,048 complex samples
+per datagram and three automatic recovery attempts by default. Run
+`./build/birria_udp --help` to select another device, destination, packet size
+or recovery budget. The manual option uses the same LNA 2, filter stage 8 and
+digital 0 gain codes as the recorder example.
+
+The stream carries 160 MB/s of UDP payload, so the default destination is the
+local host. A one gigabit network cannot carry the full stream. Remote use
+needs a faster link, enough socket buffering and an MTU appropriate for the
+selected datagram size. The default 8,192-byte payload fits common loopback
+interfaces but requires IP fragmentation on a standard 1,500-byte Ethernet
+MTU.
+
+The raw protocol has no headers, sequence numbers or return control channel.
+The program reports local send failures and library recovery gaps, but it
+cannot detect a datagram dropped after the local kernel accepts it. The SDR++
+Network source also cannot tune the receiver, so set the center frequency on
+the `birria_udp` command line. The [complete UDP streaming guide](examples/README.md)
+covers every option, stream format details, frequency control and troubleshooting.
+
 Before you start, the dongle must have **no vendor ROM patch loaded**, and its
 Wi-Fi interface must be free for libusb to claim. A software reset does not
 clear a patch that is already loaded. On Linux, stop the Wi-Fi driver from
