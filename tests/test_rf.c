@@ -337,16 +337,38 @@ static void test_band_switch(void)
     CHECK(get(&model, 16, 0xcac) == 27526);
     CHECK(get(&model, 16, 0x160) & (1u << 29));
     CHECK(get(&model, 17, 0x160) & (1u << 29));
-    CHECK((get(&model, 16, 0xc00) & 0x3c) == 0x38);
+    CHECK((get(&model, 16, 0xc00) & 0x0010003c) == 0x38);
     before = model.written;
     CHECK(mt_change_frequency(&dev, UINT64_C(5815000000)) == 0);
     for (size_t i = before; i < model.written; ++i)
         CHECK(model.writes[i].space == 16 && model.writes[i].address != 0xc00);
+    CHECK((get(&model, 16, 0xc94) & 0xff) == 0x15);
+    /* Entering 6 GHz sets the profile bit; retunes inside 6 GHz leave 0xc00 alone. */
+    CHECK(mt_change_frequency(&dev, UINT64_C(6455000000)) == 0);
+    CHECK((get(&model, 16, 0xc00) & 0x0010003c) == 0x00100038);
+    CHECK(get(&model, 16, 0xca8) == 0x0811999a);
+    CHECK((get(&model, 16, 0xc94) & 0xff) == 0x16);
+    before = model.written;
+    CHECK(mt_change_frequency(&dev, UINT64_C(6615000000)) == 0);
+    for (size_t i = before; i < model.written; ++i)
+        CHECK(model.writes[i].space == 16 && model.writes[i].address != 0xc00);
+    /* 6 to 5 GHz clears it, back to 6 GHz sets it again. */
+    CHECK(mt_change_frequency(&dev, UINT64_C(5220000000)) == 0);
+    CHECK((get(&model, 16, 0xc00) & 0x0010003c) == 0x38);
+    CHECK((get(&model, 16, 0xc94) & 0xff) == 0x15);
+    CHECK(mt_change_frequency(&dev, UINT64_C(5925000000)) == 0);
+    CHECK((get(&model, 16, 0xc00) & 0x0010003c) == 0x00100038);
     CHECK(mt_change_frequency(&dev, UINT64_C(2437000000)) == 0);
+    CHECK((get(&model, 16, 0xc94) & 0xff) == 0x14);
+    CHECK(!(get(&model, 16, 0xc00) & (1u << 20)));
     CHECK(get(&model, 16, 0xca8) == 0x0513bbbc);
     CHECK(!(get(&model, 16, 0x160) & (1u << 29)));
     CHECK(!(get(&model, 17, 0x160) & (1u << 29)));
     CHECK((get(&model, 16, 0xc00) & 0x3c) == 0x28);
+    /* 2.4 to 6 GHz sets both the high band and the profile bit in one step. */
+    CHECK(mt_change_frequency(&dev, UINT64_C(6135000000)) == 0);
+    CHECK((get(&model, 16, 0xc00) & 0x0010003c) == 0x00100038);
+    CHECK(get(&model, 17, 0x160) & (1u << 29));
     CHECK(mt_change_frequency(&dev, UINT64_C(3000000000)) == BIRRIASDR_ERROR_UNSUPPORTED);
 }
 

@@ -119,6 +119,15 @@ static void test_5g_words(void)
     }
     CHECK(mt_plan_5g(UINT64_C(5735000000), MT_RF_FRACTION_BITS, &plan) == 0);
     CHECK(plan.word == 0x872b3333 && plan.calibration_cycles == 27526);
+    CHECK(plan.preset == 0x15);
+    /* Vendor 6 GHz words: same VCO plan, preset 0x16 above 6195 MHz. */
+    CHECK(mt_plan_5g(UINT64_C(6455000000), 18, &plan) == 0);
+    CHECK(plan.word == 0x88119998 && plan.calibration_cycles == 0x7906 && plan.preset == 0x16);
+    CHECK(mt_plan_5g(UINT64_C(7115000000), 18, &plan) == 0);
+    CHECK(plan.word == 0x88e4cccc && plan.calibration_cycles == 0x8566 && plan.preset == 0x16);
+    CHECK(mt_plan_5g(MT_RF_PRESET_STEP_HZ - 1, MT_RF_FRACTION_BITS, &plan) == 0 && plan.preset == 0x15);
+    CHECK(mt_plan_5g(MT_RF_PRESET_STEP_HZ, MT_RF_FRACTION_BITS, &plan) == 0 && plan.preset == 0x16);
+    CHECK(mt_plan_2g(UINT64_C(2437000000), MT_RF_FRACTION_BITS, &plan) == 0 && plan.preset == 0);
     CHECK(mt_plan_5g(UINT64_C(5180000000), 19, &plan) == BIRRIASDR_ERROR_INVALID);
     CHECK(mt_plan_5g(0, MT_RF_FRACTION_BITS, &plan) == BIRRIASDR_ERROR_INVALID);
     CHECK(mt_plan_5g(UINT64_MAX, MT_RF_FRACTION_BITS, &plan) == BIRRIASDR_ERROR_INVALID);

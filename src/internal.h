@@ -99,6 +99,7 @@ struct birriasdr_dev {
         uint32_t filter_fields;
         bool filter_saved;
         bool high_band;
+        bool band_6g;
         bool band_valid;
     } mt7921;
     struct birriasdr_stream_stats stats;

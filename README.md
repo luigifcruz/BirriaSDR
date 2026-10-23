@@ -14,7 +14,7 @@ anything, try the rough [proof of concept](#proof-of-concept).
 >
 > This is experimental software. The tested board starts from a channel 6
 > initialization profile, and the library tunes 2156 to 2610 MHz and 4500 to
-> 6200 MHz. Sensitivity across those ranges, frequency accuracy and gain are not
+> 6615 MHz. Sensitivity across those ranges, frequency accuracy and gain are not
 > calibrated. Use at your own risk.
 
 https://github.com/user-attachments/assets/64e9fbbd-1f16-4c7b-905c-5624b9c574b7
@@ -54,7 +54,7 @@ which pairs an MT7961 digital die with an MT7972 analog die. By default the
 receiver is centered on Wi-Fi channel 6 (nominally 2437 MHz) and uses receive
 chain 0 at 40 million complex samples per second. You can select 10, 20 or 80
 million instead. The library can retune anywhere in the 2156 to 2610 MHz and
-4500 to 6200 MHz bands, even while streaming and across bands. Each rate pairs
+4500 to 6615 MHz bands, even while streaming and across bands. Each rate pairs
 an **analog filter with a digital bandwidth setting that matches its span**. The
 10 MSps rate uses the 20 MHz analog setting with a narrower, about 10 MHz
 digital filter. At 40 MSps on the tested board, the measured noise spectrum
@@ -73,7 +73,7 @@ For more detail, see:
 | Parameter | Current value |
 | --- | --- |
 | Hardware | COMFAST dongle `3574:6211`, or a board with MediaTek's generic ID `0e8d:7961`, with an MT7961 digital die and an MT7972 analog die |
-| Frequency tuning | 2156 to 2610 MHz, or 2190 to 2610 MHz on generic-ID boards, and 4500 to 6200 MHz, including live changes and band switches. Sensitivity is unverified; 5 GHz reception was checked from 5250 to 5815 MHz |
+| Frequency tuning | 2156 to 2610 MHz, or 2190 to 2610 MHz on generic-ID boards, and 4500 to 6615 MHz, including live changes and band switches. Sensitivity is unverified; reception was checked from 5250 to 5815 MHz and from 6135 to 6615 MHz |
 | Tuning step | Nominally 28.61 Hz, using the full 20-bit fraction. Requests are in whole hertz with no Wi-Fi channel restriction. The physical response to fine steps is still unmeasured |
 | Sample rate | 10, 20, 40 or 80 MSps complex. The default is 40 MSps |
 | Sampled bandwidth | A span equal to the sample rate, with nominal analog and digital settings for that span. The 10 MSps rate uses the 20 MHz analog setting with a narrower digital filter. See [filter characteristics](docs/mt7921.md#filtering) for rolloff and aliasing limits |

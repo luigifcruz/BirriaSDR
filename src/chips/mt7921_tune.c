@@ -81,6 +81,17 @@ int mt_plan_2g(uint64_t frequency_hz, unsigned fraction_bits, struct mt_2g_tunin
 
 /* The 5 GHz plan: VCO = 1.2 x center, so the divider is center / 50 MHz. The
  * vendor firmware writes 18-bit fractions; normal tuning uses all 20.
+ *
+ * The same plan covers 6 GHz once the selected bank's VCO preset is raised.
+ * With the 2.4 GHz value 0x14 in 0xc94[7:0], calibration fails from about
+ * 6300 MHz up; any value from 0x15 to 0x17 calibrates from 4500 to 7125 MHz.
+ * The vendor firmware writes 0x15 up to at least 6115 MHz and 0x16 from at
+ * least 6275 MHz; this plan switches at the 6195 MHz midpoint. The exact point
+ * does not matter for calibration. Calibration passing does not show that the
+ * LO arrived: reception from about 6.4 GHz up also needs the 6 GHz profile bit
+ * 0xc00[20], which select_band() sets. The vendor firmware also steps 0xcc8,
+ * 0xcb0, 0xd6c and 0xcb8 at 6 GHz; leaving those out changed neither
+ * calibration nor reception here.
  */
 int mt_plan_5g(uint64_t frequency_hz, unsigned fraction_bits, struct mt_2g_tuning *plan)
 {
@@ -99,7 +110,8 @@ int mt_plan_5g(uint64_t frequency_hz, unsigned fraction_bits, struct mt_2g_tunin
         .word = 0x80000000u | (uint32_t)(divider << (20 - fraction_bits)),
         .calibration_cycles = (uint32_t)(cycles - 2),
         .nominal_hz_num = divider * vco_reference_hz,
-        .nominal_hz_den = (uint32_t)scale
+        .nominal_hz_den = (uint32_t)scale,
+        .preset = frequency_hz < MT_RF_PRESET_STEP_HZ ? 0x15 : 0x16
     };
     return 0;
 }
@@ -171,6 +183,8 @@ static int tune_plan(birriasdr_dev_t *dev, unsigned port, bool secondary,
     BS_TRY(mt_rf_update(dev, port, 0x204, 0x00c00000, selector << 22));
     BS_TRY(mt_rf_update(dev, port, 0x21c, 0x00060000, selector << 17));
     BS_TRY(mt_rf_update(dev, port, 0x160, 1u << 29, high_vco ? 1u << 29 : 0));
+    if (plan.preset)
+        BS_TRY(mt_rf_update(dev, port, reg - 0x14, 0xff, plan.preset));
     BS_TRY(mt_rf_write(dev, port, 0xcf8, 0x90));
     BS_TRY(mt_rf_write(dev, port, reg, plan.word));
     BS_TRY(mt_rf_write(dev, port, reg + 4, plan.calibration_cycles));
@@ -194,15 +208,26 @@ int mt_tune_2g(birriasdr_dev_t *dev, unsigned port, bool secondary,
 /* Move the LO path and front end between bands. Invalidate the cached band
  * before either write: a failed transfer may already have changed hardware.
  * Retries, including rollback to the previous band, must reapply both fields.
+ *
+ * 0xc00[20] is the vendor firmware's 6 GHz synthesizer profile. It follows the
+ * band, not the VCO: set from 5955 MHz, clear at 5885 MHz and below. Without it
+ * calibration and readback still pass, but nothing is received from about
+ * 6.4 GHz up.
  */
-static int select_band(birriasdr_dev_t *dev, bool high)
+static int select_band(birriasdr_dev_t *dev, bool high, bool band_6g)
 {
-    if (dev->mt7921.band_valid && dev->mt7921.high_band == high)
+    if (dev->mt7921.band_valid && dev->mt7921.high_band == high &&
+        dev->mt7921.band_6g == band_6g)
         return 0;
     dev->mt7921.band_valid = false;
-    BS_TRY(mt_rf_update(dev, MT_SYNTH_PORT, 0xc00, 0x3c, high ? 0x38 : 0x28));
+    BS_TRY(mt_rf_update(dev, MT_SYNTH_PORT, 0xc00, 0x0010003c,
+                        (high ? 0x38 : 0x28) | (band_6g ? 1u << 20 : 0)));
     BS_TRY(mt_rf_update(dev, MT_RX_PORT, 0x160, 1u << 29, high ? 1u << 29 : 0));
+    /* High-band tunes set the selected bank's VCO preset; restore the 2.4 GHz one. */
+    if (!high)
+        BS_TRY(mt_rf_update(dev, MT_SYNTH_PORT, 0xc94, 0xff, 0x14));
     dev->mt7921.high_band = high;
+    dev->mt7921.band_6g = band_6g;
     dev->mt7921.band_valid = true;
     return 0;
 }
@@ -218,7 +243,7 @@ static int retune_selected(birriasdr_dev_t *dev, uint64_t frequency_hz, unsigned
     int result, restore;
     BS_TRY(high ? mt_plan_5g(frequency_hz, fraction_bits, &plan)
                 : mt_plan_2g(frequency_hz, fraction_bits, &plan));
-    BS_TRY(select_band(dev, high));
+    BS_TRY(select_band(dev, high, frequency_hz >= MT_RF_6G_PROFILE_HZ));
     BS_TRY(mt_rf_read(dev, MT_SYNTH_PORT, 0x240, &routing));
     result = tune_plan(dev, MT_SYNTH_PORT, true, &plan, high);
     restore = mt_rf_update(dev, MT_SYNTH_PORT, 0x240, 0xf0000000, routing & 0xf0000000);
