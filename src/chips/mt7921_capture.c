@@ -75,18 +75,19 @@ int mt_configure_capture(birriasdr_dev_t *dev)
     BS_TRY(bs_write32(dev, BS_MMIO, 0x80021098, 0));
     BS_TRY(bs_write32(dev, BS_MMIO, 0x8002109c, 0xfffc));
     /* Bit 17 packs the tap into 16-byte records of two samples and two zero
-     * words, one record per four tap samples: 80 MSps in, 20 MSps out, at
-     * 160 MB/s. The other rates use the dense format with all bits clear.
+     * words, one record per four tap samples: 80 MSps in gives 20 MSps at
+     * 160 MB/s, 40 MSps in gives 10 MSps at 80 MB/s. The other rates use the
+     * dense format with all bits clear.
      */
     BS_TRY(bs_update32(dev, BS_MMIO, 0x800210b8, 0xf0000,
-                        dev->rate == 20000000 ? 0x9c020000 : 0x9c000000));
+                        dev->rate <= 20000000 ? 0x9c020000 : 0x9c000000));
     BS_TRY(bs_update32(dev, BS_MMIO, 0x830ad440, 0xff, 0x80000013));
     /* Bits 19:18 select the tap rate, 40 MSps << (3 - m): 3 for 40 MSps, 2 for
-     * 80 MSps. 20 MSps uses the 80 MSps tap and the packer below, which keeps
-     * one sample in four. Tap 4 (bits 11:8) is unchanged for all rates.
+     * 80 MSps. 20 and 10 MSps use the 80 and 40 MSps taps with the packer
+     * below, which keeps one sample in four. Tap 4 (bits 11:8) is unchanged.
      */
     BS_TRY(bs_update32(dev, BS_MMIO, 0x830ad448, 0x0fffffff,
-                        dev->rate == 40000000 ? 0x008c0400 : 0x00880400));
+                        dev->rate == 40000000 || dev->rate == 10000000 ? 0x008c0400 : 0x00880400));
     BS_TRY(bs_update32(dev, BS_MMIO, 0x88009004, 0, 0x0f000000));
     return bs_write32(dev, BS_MMIO, 0x80021090, 0x4f1);
 }
@@ -126,8 +127,7 @@ static int validate(uint64_t frequency, uint32_t rate, const struct birriasdr_ga
 {
     if (gain->lna > 3 || gain->lpf > 8 || gain->digital > 12)
         return BIRRIASDR_ERROR_INVALID;
-    if (frequency < MT_RF_MIN_HZ || frequency > MT_RF_MAX_HZ ||
-        (rate != 20000000 && rate != 40000000 && rate != 80000000))
+    if (frequency < MT_RF_MIN_HZ || frequency > MT_RF_MAX_HZ || !mt_rate_supported(rate))
         return BIRRIASDR_ERROR_UNSUPPORTED;
     return 0;
 }

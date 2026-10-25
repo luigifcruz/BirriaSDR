@@ -256,7 +256,8 @@ static void test_api(void)
     CHECK(birriasdr_get_tuning_range(&dev, &minimum, &maximum) == 0);
     CHECK(minimum == UINT64_C(2156000000));
     CHECK(birriasdr_set_sample_rate(&dev, 0) == BIRRIASDR_ERROR_UNSUPPORTED);
-    CHECK(birriasdr_set_sample_rate(&dev, 10000000) == BIRRIASDR_ERROR_UNSUPPORTED);
+    CHECK(birriasdr_set_sample_rate(&dev, 5000000) == BIRRIASDR_ERROR_UNSUPPORTED);
+    CHECK(birriasdr_set_sample_rate(&dev, 10000000) == 0);
     CHECK(birriasdr_set_sample_rate(&dev, 60000000) == BIRRIASDR_ERROR_UNSUPPORTED);
     CHECK(birriasdr_set_sample_rate(&dev, 20000000) == 0);
     CHECK(birriasdr_get_sample_rate(&dev) == 20000000);
