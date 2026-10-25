@@ -139,6 +139,25 @@ static void test_samples(void)
     CHECK(bs_decode_iq(raw, iq, 2) == BIRRIASDR_ERROR_PROTOCOL);
 }
 
+/* The 20 MSps packer keeps two samples and two zero words per 16-byte record. */
+static void test_halved_samples(void)
+{
+    uint8_t raw[32] = {0};
+    int16_t iq[8];
+    raw[0] = 0xff; raw[1] = 0x1f; raw[2] = 0x00; raw[3] = 0x20;  /* I -8192, Q 8191 */
+    raw[4] = 0xff; raw[5] = 0x3f; raw[6] = 0x01; raw[7] = 0x00;  /* I 1, Q -1 */
+    raw[16] = 0x05; raw[22] = 0x07;                              /* Q 5, then I 7 */
+    CHECK(bs_decode_iq_halved(raw, iq, 8) == 0);
+    CHECK(iq[0] == -8192 && iq[1] == 8191 && iq[2] == 1 && iq[3] == -1);
+    CHECK(iq[4] == 0 && iq[5] == 5 && iq[6] == 7 && iq[7] == 0);
+    CHECK(bs_decode_iq_halved(raw, iq, 6) == BIRRIASDR_ERROR_INVALID);
+    raw[9] = 0x01;                                               /* non-zero padding */
+    CHECK(bs_decode_iq_halved(raw, iq, 8) == BIRRIASDR_ERROR_PROTOCOL);
+    raw[9] = 0;
+    raw[7] = 0x40;                                               /* invalid sample bits */
+    CHECK(bs_decode_iq_halved(raw, iq, 8) == BIRRIASDR_ERROR_PROTOCOL);
+}
+
 /* A start acknowledgment may arrive fragmented beside sample events. Reject
  * duplicate/nonzero ACKs and carry packet sequence through its wire rollover.
  */
@@ -237,8 +256,10 @@ static void test_api(void)
     CHECK(birriasdr_get_tuning_range(&dev, &minimum, &maximum) == 0);
     CHECK(minimum == UINT64_C(2156000000));
     CHECK(birriasdr_set_sample_rate(&dev, 0) == BIRRIASDR_ERROR_UNSUPPORTED);
-    CHECK(birriasdr_set_sample_rate(&dev, 20000000) == BIRRIASDR_ERROR_UNSUPPORTED);
-    CHECK(birriasdr_get_sample_rate(&dev) == 40000000);
+    CHECK(birriasdr_set_sample_rate(&dev, 10000000) == BIRRIASDR_ERROR_UNSUPPORTED);
+    CHECK(birriasdr_set_sample_rate(&dev, 60000000) == BIRRIASDR_ERROR_UNSUPPORTED);
+    CHECK(birriasdr_set_sample_rate(&dev, 20000000) == 0);
+    CHECK(birriasdr_get_sample_rate(&dev) == 20000000);
     CHECK(birriasdr_set_sample_rate(&dev, 80000000) == 0);
     CHECK(birriasdr_get_sample_rate(&dev) == 80000000);
     CHECK(birriasdr_set_sample_rate(&dev, 40000000) == 0);
@@ -266,6 +287,7 @@ int main(void)
     test_framing();
     test_gap_events();
     test_samples();
+    test_halved_samples();
     test_events();
     test_all_sample_values();
     test_image();

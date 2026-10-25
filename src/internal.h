@@ -88,8 +88,8 @@ struct birriasdr_dev {
     struct {
         uint32_t gain_baseline[4];
         bool gain_saved;
-        uint32_t filter_baseline[9];
-        unsigned filter_fields;
+        uint32_t filter_baseline[10];
+        uint32_t filter_fields;
         bool filter_saved;
     } mt7921;
     struct birriasdr_stream_stats stats;
@@ -135,6 +135,15 @@ void bs_put_le16(uint8_t *bytes, uint16_t value);
 int bs_framer_feed(struct bs_framer *framer, const uint8_t *data, size_t length);
 int bs_framer_finish(const struct bs_framer *framer, uint64_t expected);
 int bs_decode_iq(const uint8_t *raw, int16_t *iq, size_t samples);
+int bs_decode_iq_halved(const uint8_t *raw, int16_t *iq, size_t words);
+
+/* At 20 MSps the capture packer keeps every other sample and pads each 16-byte
+ * record with two zero words, so a packet carries half as many samples.
+ */
+static inline uint32_t bs_packet_samples(const birriasdr_dev_t *dev)
+{
+    return dev->rate == 20000000 ? BS_PACKET_SAMPLES / 2 : BS_PACKET_SAMPLES;
+}
 int bs_stream(birriasdr_dev_t *dev, birriasdr_read_async_cb_t callback,
                void *context, uint32_t depth, uint32_t buffer_samples, uint32_t packets);
 

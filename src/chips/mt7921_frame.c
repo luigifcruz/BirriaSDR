@@ -140,3 +140,21 @@ int bs_decode_iq(const uint8_t *raw, int16_t *iq, size_t samples)
     }
     return 0;
 }
+
+/* The 20 MSps packer (0x800210b8[17]) writes records of four words: two
+ * consecutive output samples, then two zero words, one record per four samples
+ * of the 80 MSps tap. Keep the samples, require zero padding, and validate the
+ * whole packet before writing any output.
+ */
+int bs_decode_iq_halved(const uint8_t *raw, int16_t *iq, size_t words)
+{
+    if (words % 4)
+        return BIRRIASDR_ERROR_INVALID;
+    for (size_t n = 0; n < words; n += 4)
+        if (bs_get_le32(raw + n * 4 + 8) || bs_get_le32(raw + n * 4 + 12) ||
+            ((bs_get_le32(raw + n * 4) | bs_get_le32(raw + n * 4 + 4)) & 0xc000c000u))
+            return BIRRIASDR_ERROR_PROTOCOL;
+    for (size_t n = 0; n < words; n += 4)
+        BS_TRY(bs_decode_iq(raw + n * 4, iq + n, 2));
+    return 0;
+}

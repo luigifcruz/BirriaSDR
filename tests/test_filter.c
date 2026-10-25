@@ -116,7 +116,7 @@ int main(void)
     CHECK(!memcmp(model.value, baseline, sizeof(baseline)));
 
     initialize(&model, &dev);
-    dev.rate = 20000000;
+    dev.rate = 10000000;
     CHECK(mt_configure_filter(&dev) == BIRRIASDR_ERROR_UNSUPPORTED && !model.operations);
     puts("Filter configuration, preservation, rollback and readback tests passed");
     return 0;

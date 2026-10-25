@@ -428,7 +428,7 @@ int birriasdr_read_sync(birriasdr_dev_t *dev, int16_t *iq, uint32_t count, uint3
         *n_read = 0;
     if (!dev || !iq || !n_read || !count || count % BS_PACKET_SAMPLES)
         return BIRRIASDR_ERROR_INVALID;
-    result = bs_stream(dev, copy_sync, &buffer, 64, 16384, count / BS_PACKET_SAMPLES);
+    result = bs_stream(dev, copy_sync, &buffer, 64, 16384, count / bs_packet_samples(dev));
     *n_read = buffer.received;
     if (!result && buffer.received != count)
         return BIRRIASDR_ERROR_PROTOCOL;

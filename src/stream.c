@@ -38,12 +38,16 @@ static void flush_samples(struct delivery *delivery)
 }
 
 /* Reorder one complete raw Q,I payload into public I,Q pairs. The fixed
- * format supplies 2048 samples; callback capacity is a whole number of packets.
+ * format supplies 2048 samples (1024 at 20 MSps); callback capacity is a whole
+ * number of full-rate packets, which also divides evenly at 20 MSps.
  */
 static int decode_payload(struct delivery *delivery, const uint8_t *raw)
 {
-    BS_TRY(bs_decode_iq(raw, delivery->iq + 2u * delivery->used, BS_PACKET_SAMPLES));
-    delivery->used += BS_PACKET_SAMPLES;
+    if (delivery->dev->rate == 20000000)
+        BS_TRY(bs_decode_iq_halved(raw, delivery->iq + 2u * delivery->used, BS_PACKET_SAMPLES));
+    else
+        BS_TRY(bs_decode_iq(raw, delivery->iq + 2u * delivery->used, BS_PACKET_SAMPLES));
+    delivery->used += bs_packet_samples(delivery->dev);
     if (delivery->used == delivery->capacity)
         flush_samples(delivery);
     return 0;
