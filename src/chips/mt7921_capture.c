@@ -76,7 +76,11 @@ int mt_configure_capture(birriasdr_dev_t *dev)
     BS_TRY(bs_write32(dev, BS_MMIO, 0x8002109c, 0xfffc));
     BS_TRY(bs_update32(dev, BS_MMIO, 0x800210b8, 0xf0000, 0x9c000000));
     BS_TRY(bs_update32(dev, BS_MMIO, 0x830ad440, 0xff, 0x80000013));
-    BS_TRY(bs_update32(dev, BS_MMIO, 0x830ad448, 0x0fffffff, 0x008c0400));
+    /* Bits 19:18 select the dense rate, 40 MSps << (3 - m): 3 for 40 MSps, 2 for
+     * 80 MSps. Tap 4 (bits 11:8) is unchanged for both.
+     */
+    BS_TRY(bs_update32(dev, BS_MMIO, 0x830ad448, 0x0fffffff,
+                        dev->rate == 80000000 ? 0x00880400 : 0x008c0400));
     BS_TRY(bs_update32(dev, BS_MMIO, 0x88009004, 0, 0x0f000000));
     return bs_write32(dev, BS_MMIO, 0x80021090, 0x4f1);
 }
@@ -116,7 +120,8 @@ static int validate(uint64_t frequency, uint32_t rate, const struct birriasdr_ga
 {
     if (gain->lna > 3 || gain->lpf > 8 || gain->digital > 12)
         return BIRRIASDR_ERROR_INVALID;
-    if (frequency < MT_RF_MIN_HZ || frequency > MT_RF_MAX_HZ || rate != 40000000)
+    if (frequency < MT_RF_MIN_HZ || frequency > MT_RF_MAX_HZ ||
+        (rate != 40000000 && rate != 80000000))
         return BIRRIASDR_ERROR_UNSUPPORTED;
     return 0;
 }

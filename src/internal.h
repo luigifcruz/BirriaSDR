@@ -88,7 +88,8 @@ struct birriasdr_dev {
     struct {
         uint32_t gain_baseline[4];
         bool gain_saved;
-        uint32_t filter_baseline[4];
+        uint32_t filter_baseline[9];
+        unsigned filter_fields;
         bool filter_saved;
     } mt7921;
     struct birriasdr_stream_stats stats;

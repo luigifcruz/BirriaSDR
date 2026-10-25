@@ -89,17 +89,20 @@ int main(int argc, char **argv)
     birriasdr_dev_t *dev = NULL;
     struct birriasdr_stream_stats stats;
     struct recorder recorder = {0};
-    uint64_t frequency = 0;
+    uint64_t frequency = 0, rate = 0;
     int result, close_result, argument = 1;
     if (argc == 2 && !strcmp(argv[1], "--list"))
         return list_devices();
-    if (argc > 1 && !strcmp(argv[1], "--frequency")) {
-        if (argc < 4 || parse_number(argv[2], &frequency))
+    while (argc - argument >= 2 && (!strcmp(argv[argument], "--frequency") ||
+                                    !strcmp(argv[argument], "--rate"))) {
+        uint64_t *target = !strcmp(argv[argument], "--rate") ? &rate : &frequency;
+        if (parse_number(argv[argument + 1], target))
             return 1;
-        argument = 3;
+        argument += 2;
     }
-    if (argc - argument < 1 || argc - argument > 3) {
-        fprintf(stderr, "Usage: %s --list | [--frequency Hz] output.cs16 [complex-samples [manual]]\n", argv[0]);
+    if (argc - argument < 1 || argc - argument > 3 || rate > UINT32_MAX) {
+        fprintf(stderr, "Usage: %s --list | [--frequency Hz] [--rate 40000000|80000000] "
+                "output.cs16 [complex-samples [manual]]\n", argv[0]);
         return 1;
     }
     if (argc - argument >= 2 && parse_number(argv[argument + 1], &recorder.limit))
@@ -112,6 +115,14 @@ int main(int argc, char **argv)
         return 1;
     }
     recorder.dev = dev;
+    if (rate) {
+        result = birriasdr_set_sample_rate(dev, (uint32_t)rate);
+        if (result < 0) {
+            fprintf(stderr, "Rate: %s\n", birriasdr_strerror(result));
+            birriasdr_close(dev);
+            return 1;
+        }
+    }
     if (frequency) {
         result = birriasdr_set_center_freq(dev, frequency);
         if (result < 0) {

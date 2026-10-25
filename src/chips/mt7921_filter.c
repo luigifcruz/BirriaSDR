@@ -3,7 +3,13 @@
  */
 
 /*
- * MT7961/MT7972 matched receive bandwidth at 40 MSps
+ * MT7961/MT7972 matched receive bandwidth at 40 or 80 MSps
+ *
+ * At 80 MSps the profile follows the vendor's 80 MHz channel setup (also used
+ * by Mtk79ICAP): analog code 2, per-chain 0xb00/0xb04 fields, digital class 2
+ * latched by a pulse of 0x8300c008/0x8301c008[31], and on 2.4 GHz
+ * 0x830a0080[7:4] = 6. Without them the 80 MSps tap repeats 40 MSps samples.
+ * The description below is the 40 MSps profile.
  *
  * The analog filter and the digital PHY bandwidth are independent controls.
  * RF 0x160[31:30] selects the analog profile in each physical SPI bank;
@@ -35,29 +41,59 @@
 #include "mt7921.h"
 #include <string.h>
 
-static const uint32_t filter_addresses[] = {0x160, 0x160, 0x83081000, 0x83091000};
+/* Fields 0-3 are the 40 MHz profile. The 80 MHz profile adds the per-chain
+ * analog words 0xb00/0xb04 and 0x830a0080[7:4] (vendor FUN_0093ca3e writes 6
+ * there for an 80 MHz 2.4 GHz channel). RF fields name their physical SPI
+ * bank; the others are MMIO.
+ */
+static const struct filter_field {
+    bool rf;
+    unsigned port;
+    uint32_t address, mask, value40, value80;
+} fields[] = {
+    {true, 0, 0x160, 0xc0000000, 0x40000000, 0x80000000},
+    {true, 1, 0x160, 0xc0000000, 0x40000000, 0x80000000},
+    {false, 0, 0x83081000, 0x0f000000, 0x01000000, 0x02000000},
+    {false, 0, 0x83091000, 0x0f000000, 0x01000000, 0x02000000},
+    {true, 0, 0xb00, 0x3f000000, 0, 0x20000000},
+    {true, 1, 0xb00, 0x3f000000, 0, 0x20000000},
+    {true, 0, 0xb04, 0x1f0000c0, 0, 0x1f000080},
+    {true, 1, 0xb04, 0x1f0000c0, 0, 0x1f000080},
+    {false, 0, 0x830a0080, 0x000000f0, 0, 0x00000060}
+};
 
-/* The first two fields use physical RF banks; the remaining two use MMIO. */
 static int filter_read(birriasdr_dev_t *dev, unsigned field, uint32_t *value)
 {
-    if (field < 2)
-        return mt_rf_read(dev, field, filter_addresses[field], value);
-    return bs_read32(dev, BS_MMIO, filter_addresses[field], value);
+    const struct filter_field *f = &fields[field];
+    if (f->rf)
+        return mt_rf_read(dev, f->port, f->address, value);
+    return bs_read32(dev, BS_MMIO, f->address, value);
 }
 
-/* Change only the bandwidth field, retaining band selection and other modes.
+/* Change only the owned field, retaining band selection and other modes.
  * Masked verification accepts independent changes to unrelated register bits.
  */
 static int filter_write(birriasdr_dev_t *dev, unsigned field, uint32_t value)
 {
-    uint32_t mask = field < 2 ? UINT32_C(0xc0000000) : UINT32_C(0x0f000000);
+    const struct filter_field *f = &fields[field];
     uint32_t actual;
-    if (field < 2)
-        BS_TRY(mt_rf_update(dev, field, filter_addresses[field], mask, value & mask));
+    if (f->rf)
+        BS_TRY(mt_rf_update(dev, f->port, f->address, f->mask, value & f->mask));
     else
-        BS_TRY(bs_update32(dev, BS_MMIO, filter_addresses[field], mask, value & mask));
+        BS_TRY(bs_update32(dev, BS_MMIO, f->address, f->mask, value & f->mask));
     BS_TRY(filter_read(dev, field, &actual));
-    return ((actual ^ value) & mask) ? BIRRIASDR_ERROR_STATE : 0;
+    return ((actual ^ value) & f->mask) ? BIRRIASDR_ERROR_STATE : 0;
+}
+
+/* The digital rate class takes effect on a pulse of 0x8300c008/0x8301c008[31],
+ * as the vendor firmware and Mtk79ICAP do. The 40 MHz profile never needed it.
+ */
+static int latch_rate_class(birriasdr_dev_t *dev)
+{
+    BS_TRY(bs_update32(dev, BS_MMIO, 0x8300c008, 0, 0x80000000));
+    BS_TRY(bs_update32(dev, BS_MMIO, 0x8301c008, 0, 0x80000000));
+    BS_TRY(bs_update32(dev, BS_MMIO, 0x8300c008, 0x80000000, 0));
+    return bs_update32(dev, BS_MMIO, 0x8301c008, 0x80000000, 0);
 }
 
 /* Restore digital class first, then analog width, before the subsystem reset.
@@ -65,13 +101,22 @@ static int filter_write(birriasdr_dev_t *dev, unsigned field, uint32_t value)
  */
 int mt_restore_filter(birriasdr_dev_t *dev)
 {
-    static const unsigned order[] = {2, 3, 0, 1};
+    static const unsigned order[] = {2, 3, 8, 0, 1, 4, 5, 6, 7};
+    unsigned count = dev->mt7921.filter_fields;
     int first_error = 0;
     if (!dev->mt7921.filter_saved)
         return 0;
-    for (unsigned i = 0; i < 4; ++i) {
+    for (unsigned i = 0; i < sizeof(order) / sizeof(order[0]); ++i) {
         unsigned field = order[i];
-        int result = filter_write(dev, field, dev->mt7921.filter_baseline[field]);
+        int result;
+        if (field >= count)
+            continue;
+        result = filter_write(dev, field, dev->mt7921.filter_baseline[field]);
+        if (result < 0 && !first_error)
+            first_error = result;
+    }
+    if (count > 4) {
+        int result = latch_rate_class(dev);
         if (result < 0 && !first_error)
             first_error = result;
     }
@@ -85,17 +130,25 @@ int mt_restore_filter(birriasdr_dev_t *dev)
  */
 int mt_configure_filter(birriasdr_dev_t *dev)
 {
-    uint32_t before[4];
-    if (dev->rate != 40000000)
+    uint32_t before[9];
+    bool wide = dev->rate == 80000000;
+    unsigned count = wide ? 9 : 4;
+    if (dev->rate != 40000000 && !wide)
         return BIRRIASDR_ERROR_UNSUPPORTED;
     if (dev->mt7921.filter_saved)
         return BIRRIASDR_ERROR_STATE;
-    for (unsigned i = 0; i < 4; ++i)
+    for (unsigned i = 0; i < count; ++i)
         BS_TRY(filter_read(dev, i, &before[i]));
-    memcpy(dev->mt7921.filter_baseline, before, sizeof(before));
+    memcpy(dev->mt7921.filter_baseline, before, count * sizeof(before[0]));
+    dev->mt7921.filter_fields = count;
     dev->mt7921.filter_saved = true;
-    for (unsigned i = 0; i < 4; ++i) {
-        int result = filter_write(dev, i, i < 2 ? UINT32_C(0x40000000) : UINT32_C(0x01000000));
+    for (unsigned i = 0; i < count; ++i) {
+        int result = filter_write(dev, i, wide ? fields[i].value80 : fields[i].value40);
+        if (result < 0)
+            return mt_restore_filter(dev) < 0 ? BIRRIASDR_ERROR_STATE : result;
+    }
+    if (wide) {
+        int result = latch_rate_class(dev);
         if (result < 0)
             return mt_restore_filter(dev) < 0 ? BIRRIASDR_ERROR_STATE : result;
     }

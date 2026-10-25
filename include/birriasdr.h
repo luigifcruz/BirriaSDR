@@ -197,9 +197,10 @@ int birriasdr_set_center_freq(birriasdr_dev_t *dev, uint64_t frequency_hz);
  */
 uint64_t birriasdr_get_center_freq(const birriasdr_dev_t *dev);
 
-/** Stage complex samples/second. MT7921 accepts 40000000 only at present.
- * The sampled span is 40 MHz, using matched nominal 40 MHz analog/digital
- * settings. This is not a calibrated passband or an alias-rejection guarantee.
+/** Stage complex samples/second. MT7921 accepts 40000000 and 80000000.
+ * The sampled span equals the rate, using matched nominal 40 or 80 MHz
+ * analog/digital settings. 80 MSps doubles the USB load to about 320 MB/s.
+ * This is not a calibrated passband or an alias-rejection guarantee.
  */
 int birriasdr_set_sample_rate(birriasdr_dev_t *dev, uint32_t samples_per_second);
 
