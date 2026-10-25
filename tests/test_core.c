@@ -214,7 +214,12 @@ static void test_api(void)
     CHECK(birriasdr_set_tuner_gain(&dev, 100) == BIRRIASDR_ERROR_UNSUPPORTED);
     CHECK(birriasdr_set_agc_mode(&dev, 1) == BIRRIASDR_ERROR_UNSUPPORTED);
     CHECK(birriasdr_set_tuner_bandwidth(&dev, 40000000) == BIRRIASDR_ERROR_UNSUPPORTED);
-    CHECK(birriasdr_set_center_freq(&dev, UINT64_C(5180000000)) == BIRRIASDR_ERROR_UNSUPPORTED);
+    CHECK(birriasdr_set_center_freq(&dev, UINT64_C(5180000000)) == 0);
+    CHECK(birriasdr_set_center_freq(&dev, UINT64_C(5925000000)) == 0);
+    CHECK(birriasdr_set_center_freq(&dev, UINT64_C(7125000000)) == 0);
+    CHECK(birriasdr_set_center_freq(&dev, UINT64_C(7125000001)) == BIRRIASDR_ERROR_UNSUPPORTED);
+    CHECK(birriasdr_set_center_freq(&dev, UINT64_C(5149999999)) == BIRRIASDR_ERROR_UNSUPPORTED);
+    CHECK(birriasdr_set_center_freq(&dev, UINT64_C(4000000000)) == BIRRIASDR_ERROR_UNSUPPORTED);
     CHECK(birriasdr_get_tuning_range(&dev, &minimum, &maximum) == 0);
     CHECK(birriasdr_get_capabilities(&dev) & BIRRIASDR_CAP_TUNING);
     CHECK(minimum == UINT64_C(2156000000) && maximum == UINT64_C(2610000000));
@@ -225,15 +230,61 @@ static void test_api(void)
     CHECK(birriasdr_get_center_freq(&dev) == maximum);
     CHECK(birriasdr_set_center_freq(&dev, UINT64_C(2437123456)) == 0);
     CHECK(birriasdr_get_center_freq(&dev) == UINT64_C(2437123456));
+    {
+        struct birriasdr_tuning_range ranges[4];
+        CHECK(birriasdr_get_tuning_ranges(NULL, ranges, 4) == BIRRIASDR_ERROR_INVALID);
+        CHECK(birriasdr_get_tuning_ranges(&dev, NULL, 1) == BIRRIASDR_ERROR_INVALID);
+        CHECK(birriasdr_get_tuning_ranges(&dev, NULL, 0) == 3);
+        CHECK(birriasdr_get_tuning_ranges(&dev, ranges, 1) == 3);
+        CHECK(ranges[0].minimum_hz == UINT64_C(2156000000) && ranges[0].maximum_hz == UINT64_C(2610000000));
+        CHECK(birriasdr_get_tuning_ranges(&dev, ranges, 4) == 3);
+        CHECK(ranges[1].minimum_hz == UINT64_C(5150000000) && ranges[1].maximum_hz == UINT64_C(5924999999));
+        CHECK(ranges[2].minimum_hz == UINT64_C(5925000000) && ranges[2].maximum_hz == UINT64_C(7125000000));
+    }
     id = bs_lookup_id(0x0e8d, 0x7961);
-    CHECK(id && id->qualified && id->min_frequency == UINT64_C(2190000000) && !id->max_frequency);
-    dev.min_frequency = id->min_frequency;
+    CHECK(id && id->qualified && id->bands[0].min_frequency == UINT64_C(2190000000) &&
+          !id->bands[0].max_frequency && !id->bands[1].min_frequency && !id->bands[2].max_frequency);
+    memcpy(dev.bands, id->bands, sizeof(dev.bands));
+    memcpy(dev.board_bands, id->bands, sizeof(dev.board_bands));
     CHECK(birriasdr_get_tuning_range(&dev, &minimum, &maximum) == 0);
     CHECK(minimum == UINT64_C(2190000000) && maximum == UINT64_C(2610000000));
     CHECK(birriasdr_set_center_freq(&dev, minimum - 1) == BIRRIASDR_ERROR_UNSUPPORTED);
     CHECK(birriasdr_get_center_freq(&dev) == UINT64_C(2437123456));
     CHECK(birriasdr_set_center_freq(&dev, minimum) == 0);
-    dev.min_frequency = 0;
+    /* A measured board can move one band's bounds, within that band only. */
+    CHECK(birriasdr_set_tuning_range(NULL, 0, 0, 0) == BIRRIASDR_ERROR_INVALID);
+    CHECK(birriasdr_set_tuning_range(&dev, 3, 0, 0) == BIRRIASDR_ERROR_INVALID);
+    CHECK(birriasdr_set_tuning_range(&dev, 0, UINT64_C(2155999999), 0) == BIRRIASDR_ERROR_UNSUPPORTED);
+    CHECK(birriasdr_set_tuning_range(&dev, 0, 0, UINT64_C(2610000001)) == BIRRIASDR_ERROR_UNSUPPORTED);
+    CHECK(birriasdr_set_tuning_range(&dev, 0, UINT64_C(5150000000), 0) == BIRRIASDR_ERROR_UNSUPPORTED);
+    CHECK(birriasdr_set_tuning_range(&dev, 0, UINT64_C(2400000000), UINT64_C(2300000000)) ==
+          BIRRIASDR_ERROR_INVALID);
+    CHECK(birriasdr_set_tuning_range(&dev, 0, UINT64_C(2200000000), 0) == BIRRIASDR_ERROR_INVALID);
+    CHECK(birriasdr_get_tuning_range(&dev, &minimum, &maximum) == 0 &&
+          minimum == UINT64_C(2190000000));
+    CHECK(birriasdr_set_tuning_range(&dev, 0, UINT64_C(2169000000), 0) == 0);
+    CHECK(birriasdr_get_tuning_range(&dev, &minimum, &maximum) == 0);
+    CHECK(minimum == UINT64_C(2169000000) && maximum == UINT64_C(2610000000));
+    CHECK(birriasdr_set_center_freq(&dev, minimum) == 0);
+    CHECK(birriasdr_set_center_freq(&dev, minimum - 1) == BIRRIASDR_ERROR_UNSUPPORTED);
+    CHECK(birriasdr_set_tuning_range(&dev, 0, 0, 0) == BIRRIASDR_ERROR_INVALID); /* staged 2169 MHz */
+    CHECK(birriasdr_set_center_freq(&dev, UINT64_C(2437000000)) == 0);
+    /* A 2.4 GHz maximum leaves the high bands alone; a 5 GHz bound leaves 6 GHz. */
+    CHECK(birriasdr_set_tuning_range(&dev, 0, 0, UINT64_C(2500000000)) == 0);
+    CHECK(birriasdr_set_center_freq(&dev, UINT64_C(2500000001)) == BIRRIASDR_ERROR_UNSUPPORTED);
+    CHECK(birriasdr_set_center_freq(&dev, UINT64_C(5180000000)) == 0);
+    CHECK(birriasdr_set_tuning_range(&dev, 1, UINT64_C(5200000000), 0) == BIRRIASDR_ERROR_INVALID);
+    CHECK(birriasdr_set_tuning_range(&dev, 2, UINT64_C(6000000000), 0) == 0); /* staged in band 1 */
+    CHECK(birriasdr_set_center_freq(&dev, UINT64_C(5950000000)) == BIRRIASDR_ERROR_UNSUPPORTED);
+    CHECK(birriasdr_set_center_freq(&dev, UINT64_C(6000000000)) == 0);
+    CHECK(birriasdr_set_tuning_range(&dev, 2, 0, 0) == 0);
+    CHECK(birriasdr_set_tuning_range(&dev, 0, 0, 0) == 0);
+    CHECK(birriasdr_get_tuning_range(&dev, &minimum, &maximum) == 0);
+    CHECK(minimum == UINT64_C(2190000000) && maximum == UINT64_C(2610000000));
+    CHECK(birriasdr_set_center_freq(&dev, UINT64_C(5950000000)) == 0);
+    CHECK(birriasdr_set_center_freq(&dev, UINT64_C(2437123456)) == 0);
+    memset(dev.bands, 0, sizeof(dev.bands));
+    memset(dev.board_bands, 0, sizeof(dev.board_bands));
     CHECK(birriasdr_get_tuning_range(&dev, &minimum, &maximum) == 0);
     CHECK(minimum == UINT64_C(2156000000));
     CHECK(birriasdr_set_sample_rate(&dev, 0) == BIRRIASDR_ERROR_UNSUPPORTED);
@@ -252,6 +303,7 @@ static void test_api(void)
     CHECK(birriasdr_cancel_async(&dev) == 0);
     CHECK(birriasdr_set_tuner_gain_mode(&dev, 0) == BIRRIASDR_ERROR_BUSY);
     CHECK(birriasdr_set_center_freq(&dev, minimum) == BIRRIASDR_ERROR_BUSY);
+    CHECK(birriasdr_set_tuning_range(&dev, 0, 0, 0) == BIRRIASDR_ERROR_BUSY);
     CHECK(birriasdr_close(&dev) == BIRRIASDR_ERROR_BUSY);
     CHECK(pthread_mutex_destroy(&dev.control_mutex) == 0);
 }

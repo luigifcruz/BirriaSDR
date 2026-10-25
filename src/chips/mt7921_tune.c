@@ -72,6 +72,38 @@ int mt_plan_2g(uint64_t frequency_hz, unsigned fraction_bits, struct mt_2g_tunin
     return 0;
 }
 
+/* The 5/6 GHz path uses the same selected oscillator with its output network
+ * at 5/6 of the VCO instead of 1/2, so the VCO runs at 6/5 of the center:
+ *
+ *     center = 60 MHz * (integer + fraction / 2^20) * 5 / 6.
+ *
+ * The stock firmware's words decode exactly this way at all 20 high-band
+ * centers measured (5180-7115 MHz). Its calibration count is
+ * floor(VCO / 250 kHz) - 2, which is the low-band floor(center / 125 kHz) - 2
+ * written in terms of the VCO. The same field-size checks apply.
+ */
+int mt_plan_high(uint64_t frequency_hz, unsigned fraction_bits, struct mt_2g_tuning *plan)
+{
+    const uint64_t step_hz = 50000000;
+    uint64_t cycles = frequency_hz * 6 / 1250000;
+    uint64_t scale, divider;
+    if (!plan || (fraction_bits != 18 && fraction_bits != 20))
+        return BIRRIASDR_ERROR_INVALID;
+    if (frequency_hz > UINT64_C(10000000000) || cycles < 2 || cycles > UINT16_MAX + UINT64_C(2))
+        return BIRRIASDR_ERROR_INVALID;
+    scale = UINT64_C(1) << fraction_bits;
+    divider = (frequency_hz * scale + step_hz / 2) / step_hz;
+    if (divider < scale || divider >= 1024 * scale)
+        return BIRRIASDR_ERROR_INVALID;
+    *plan = (struct mt_2g_tuning){
+        .word = 0x80000000u | (uint32_t)(divider << (20 - fraction_bits)),
+        .calibration_cycles = (uint32_t)(cycles - 2),
+        .nominal_hz_num = divider * step_hz,
+        .nominal_hz_den = (uint32_t)scale
+    };
+    return 0;
+}
+
 /* Stop only the synthesizer calibration machine, attempting every cleanup write
  * even after an I/O failure. No transmit/loopback calibration is invoked.
  */
@@ -146,15 +178,61 @@ int mt_tune_2g(birriasdr_dev_t *dev, unsigned port, bool secondary,
     return readback == (plan.word & 0x7fffffff) ? 0 : BIRRIASDR_ERROR_STATE;
 }
 
+/* Load the selected secondary oscillator for a 5/6 GHz center, with the
+ * caller owning the RF transaction as for mt_tune_2g(). Beside the word and
+ * calibration count, the stock firmware changes the band profile (0xc00 bit 4,
+ * plus bit 20 at 6 GHz), 0xcc8[7:1], the loop word 0xcb0, presets 0xc94[7:0]
+ * and 0xd6c, and the coarse VCO field 0xcb8[19:4] = floor(N / 4) in both
+ * bytes. The 2.4 GHz recipe keeps that field at 0x14 for every center.
+ * mt_configure_band() must have saved these fields first.
+ */
+int mt_tune_high(birriasdr_dev_t *dev, uint64_t frequency_hz, unsigned fraction_bits)
+{
+    struct mt_2g_tuning plan;
+    enum mt_band band = mt_band_of(frequency_hz);
+    bool six = band == MT_BAND_6G;
+    uint32_t coarse, readback;
+    int result, cleanup;
+    if (band != MT_BAND_5G && !six)
+        return BIRRIASDR_ERROR_UNSUPPORTED;
+    if (!dev->mt7921.band_saved)
+        return BIRRIASDR_ERROR_STATE;
+    BS_TRY(mt_plan_high(frequency_hz, fraction_bits, &plan));
+    coarse = ((plan.word >> 20) & 0x3ff) >> 2;
+    BS_TRY(mt_rf_update(dev, MT_SYNTH_PORT, 0x240, 0, 0xf0000000));
+    BS_TRY(mt_rf_update(dev, MT_SYNTH_PORT, 0x204, 0x00c00000, 3u << 22));
+    BS_TRY(mt_rf_update(dev, MT_SYNTH_PORT, 0x21c, 0x00060000, 3u << 17));
+    BS_TRY(mt_rf_update(dev, MT_SYNTH_PORT, 0x160, 0, 1u << 29));
+    BS_TRY(mt_rf_update(dev, MT_SYNTH_PORT, 0xc00, 0x00100010, six ? 0x00100010 : 0x10));
+    BS_TRY(mt_rf_update(dev, MT_SYNTH_PORT, 0xcc8, 0xfe, six ? 0xa8 : 0xac));
+    BS_TRY(mt_rf_write(dev, MT_SYNTH_PORT, 0xcb0,
+                       six ? 0x014d3c00u | mt_band_step(MT_STEP_LOOP, frequency_hz) : 0x014d300a));
+    BS_TRY(mt_rf_update(dev, MT_SYNTH_PORT, 0xc94, 0xff, mt_band_step(MT_STEP_PRESET, frequency_hz)));
+    BS_TRY(mt_rf_update(dev, MT_SYNTH_PORT, 0xd6c, 0x00ff00ff,
+                        (uint32_t)mt_band_step(MT_STEP_PUMP, frequency_hz) << 16 | 0xd0));
+    BS_TRY(mt_rf_write(dev, MT_SYNTH_PORT, 0xcf8, 0x90));
+    BS_TRY(mt_rf_write(dev, MT_SYNTH_PORT, 0xca8, plan.word));
+    BS_TRY(mt_rf_write(dev, MT_SYNTH_PORT, 0xcac, plan.calibration_cycles));
+    BS_TRY(mt_rf_update(dev, MT_SYNTH_PORT, 0xcb8, 0x000ffff0, coarse * 0x1010));
+    result = run_calibration(dev, MT_SYNTH_PORT);
+    cleanup = finish_calibration(dev, MT_SYNTH_PORT);
+    if (result < 0 || cleanup < 0)
+        return result < 0 ? result : cleanup;
+    BS_TRY(mt_rf_read(dev, MT_SYNTH_PORT, 0xca8, &readback));
+    return readback == (plan.word & 0x7fffffff) ? 0 : BIRRIASDR_ERROR_STATE;
+}
+
 /* Preserve routing around a complete selected-oscillator calibration. The
  * caller owns register access; capture need not stop for this RF-only change.
  */
-static int retune_selected(birriasdr_dev_t *dev, uint64_t frequency_hz, unsigned fraction_bits)
+static int retune_selected(birriasdr_dev_t *dev, uint64_t frequency_hz, unsigned fraction_bits,
+                           bool high)
 {
     uint32_t routing;
     int result, restore;
     BS_TRY(mt_rf_read(dev, MT_SYNTH_PORT, 0x240, &routing));
-    result = mt_tune_2g(dev, MT_SYNTH_PORT, true, frequency_hz, fraction_bits);
+    result = high ? mt_tune_high(dev, frequency_hz, fraction_bits) :
+             mt_tune_2g(dev, MT_SYNTH_PORT, true, frequency_hz, fraction_bits);
     restore = mt_rf_update(dev, MT_SYNTH_PORT, 0x240, 0xf0000000, routing & 0xf0000000);
     return result < 0 ? result : restore;
 }
@@ -166,24 +244,29 @@ static int retune_selected(birriasdr_dev_t *dev, uint64_t frequency_hz, unsigned
  */
 int mt_set_frequency(birriasdr_dev_t *dev, uint64_t frequency_hz)
 {
+    enum mt_band band = mt_band_of(frequency_hz);
     uint32_t diagnostic;
-    if (frequency_hz < MT_RF_MIN_HZ || frequency_hz > MT_RF_MAX_HZ)
+    if (band == MT_BAND_NONE)
         return BIRRIASDR_ERROR_UNSUPPORTED;
-    BS_TRY(retune_selected(dev, frequency_hz, MT_RF_FRACTION_BITS));
+    BS_TRY(retune_selected(dev, frequency_hz, MT_RF_FRACTION_BITS, band != MT_BAND_2G));
     BS_TRY(mt_rf_read(dev, MT_SYNTH_PORT, 0xd74, &diagnostic));
-    return diagnostic == 0xfffff400 || diagnostic == 0x00000400 ?
-           BIRRIASDR_ERROR_STATE : 0;
+    if (diagnostic == 0xfffff400 || diagnostic == 0x00000400)
+        return BIRRIASDR_ERROR_STATE;
+    return band == MT_BAND_2G ? 0 : mt_band_frequency(dev, frequency_hz);
 }
 
 /* Roll back a failed live update to the preceding requested center. The control
  * mutex keeps gain writes, STOP and reset out of this sequence. Rollback does
  * not make samples during either calibration valid, so the caller still stops
  * capture on failure. The staged center is committed by the common API only.
+ * A live change must stay in the band the acquisition was prepared for: the
+ * band profile is applied once per preparation, outside this transaction.
  */
 int mt_change_frequency(birriasdr_dev_t *dev, uint64_t frequency_hz)
 {
     int result;
-    if (frequency_hz < MT_RF_MIN_HZ || frequency_hz > MT_RF_MAX_HZ)
+    if (mt_band_of(frequency_hz) == MT_BAND_NONE ||
+        mt_band_of(frequency_hz) != mt_band_of(dev->frequency))
         return BIRRIASDR_ERROR_UNSUPPORTED;
     result = mt_set_frequency(dev, frequency_hz);
     if (result < 0 && mt_set_frequency(dev, dev->frequency) < 0)
@@ -207,5 +290,5 @@ int mt_retune_2g_probe(birriasdr_dev_t *dev, uint64_t frequency_hz, unsigned fra
     BS_TRY(bs_read32(dev, BS_MMIO, 0x80021090, &control));
     if (state != 1 || go || (control & 2))
         return BIRRIASDR_ERROR_STATE;
-    return retune_selected(dev, frequency_hz, fraction_bits);
+    return retune_selected(dev, frequency_hz, fraction_bits, false);
 }

@@ -72,6 +72,12 @@ struct birriasdr_gain {
     uint8_t digital;   /**< Digital gain code 0..12. */
 };
 
+/** One inclusive band of center frequencies in Hz. */
+struct birriasdr_tuning_range {
+    uint64_t minimum_hz;
+    uint64_t maximum_hz;
+};
+
 /** Last hardware operation reached; useful when a read fails before samples arrive. */
 enum birriasdr_stage {
     BIRRIASDR_STAGE_IDLE,
@@ -157,7 +163,7 @@ int birriasdr_get_device_info(uint32_t index, struct birriasdr_device_info *info
  * nonvolatile memory. Startup may reset USB to recover a previous failure;
  * a reset that invalidates the handle returns NO_DEVICE. A retained vendor
  * patch is rejected when reading.
- * On failure *dev is NULL. Currently only COMFAST 3574:6211 is qualified.
+ * On failure *dev is NULL. Qualified: COMFAST 3574:6211 and generic-ID 0e8d:7961 boards.
  */
 int birriasdr_open(birriasdr_dev_t **dev, uint32_t index);
 
@@ -169,12 +175,37 @@ int birriasdr_close(birriasdr_dev_t *dev);
 /** Return this backend's implemented capability bits, or 0 for NULL. */
 uint32_t birriasdr_get_capabilities(const birriasdr_dev_t *dev);
 
-/** Return inclusive command limits in Hz. Returns UNSUPPORTED if unknown.
+/** Fill up to capacity bands of inclusive command limits in Hz, in ascending
+ * order, and return the total number of bands, which may exceed capacity.
+ * ranges may be NULL when capacity is zero. Returns UNSUPPORTED if unknown.
+ * MT7921 reports 2156000000..2610000000, 5150000000..5924999999 and
+ * 5925000000..7125000000, narrowed by any board or set_tuning_range bounds.
+ * Live retuning stays within the band the read started in.
  * These are programming limits, not guaranteed RF sensitivity or passband
  * coverage. Safe during a read.
  */
+int birriasdr_get_tuning_ranges(const birriasdr_dev_t *dev,
+                               struct birriasdr_tuning_range *ranges, size_t capacity);
+
+/** Return the first band of get_tuning_ranges (the MT7921 2.4 GHz band).
+ * Kept for single-range callers; it does not describe the other bands.
+ */
 int birriasdr_get_tuning_range(const birriasdr_dev_t *dev, uint64_t *minimum_hz,
                               uint64_t *maximum_hz);
+
+/** Replace one band's bounds in Hz; configure only while idle. band indexes
+ * the get_tuning_ranges list. Board floors are measured on single units, so a
+ * board that tunes lower (or must stop higher) than its device table entry can
+ * be set here. Both bounds must lie within the backend's limits for that band.
+ * Zero restores the board's value for that bound, so (band, 0, 0) undoes any
+ * override. Other bands are unaffected.
+ * Returns BUSY during a read, UNSUPPORTED outside the backend's band, and
+ * INVALID for an unknown band, minimum > maximum, or a staged center in this
+ * band that falls outside the new bounds.
+ * Lowering a floor below the board's value is unverified on that board.
+ */
+int birriasdr_set_tuning_range(birriasdr_dev_t *dev, unsigned band, uint64_t minimum_hz,
+                              uint64_t maximum_hz);
 
 /** Set a requested center in Hz, without channel-number rounding or host mixing.
  * The MT7921 range is 2156000000..2610000000 Hz, inclusive, with nominal

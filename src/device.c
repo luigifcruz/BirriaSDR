@@ -124,17 +124,104 @@ static void control_failed(birriasdr_dev_t *dev, int error, enum birriasdr_stage
     atomic_compare_exchange_strong(&dev->run_state, &expected, BS_CONTROL_FAILED);
 }
 
+/* Effective limits of one backend band: board or application bounds where set,
+ * the backend's otherwise.
+ */
+static struct bs_band band_limits(const birriasdr_dev_t *dev, size_t band)
+{
+    struct bs_band limits = dev->backend->bands[band];
+    if (dev->bands[band].min_frequency)
+        limits.min_frequency = dev->bands[band].min_frequency;
+    if (dev->bands[band].max_frequency)
+        limits.max_frequency = dev->bands[band].max_frequency;
+    return limits;
+}
+
+/* A backend without a band table leaves range checks to its validate(). */
+static bool in_bands(const birriasdr_dev_t *dev, uint64_t frequency)
+{
+    if (!dev->backend->band_count)
+        return true;
+    for (size_t i = 0; i < dev->backend->band_count; ++i) {
+        const struct bs_band limits = band_limits(dev, i);
+        if (frequency >= limits.min_frequency && frequency <= limits.max_frequency)
+            return true;
+    }
+    return false;
+}
+
 /* Report backend command limits rather than inferring them from a Wi-Fi channel
  * table, narrowed by any measured board bounds. The bounds describe programming
  * support, not measured sensitivity.
  */
+int birriasdr_get_tuning_ranges(const birriasdr_dev_t *dev, struct birriasdr_tuning_range *ranges,
+                                size_t capacity)
+{
+    if (!dev || (!ranges && capacity))
+        return BIRRIASDR_ERROR_INVALID;
+    if (!dev->backend->band_count)
+        return BIRRIASDR_ERROR_UNSUPPORTED;
+    for (size_t i = 0; i < dev->backend->band_count && i < capacity; ++i) {
+        const struct bs_band limits = band_limits(dev, i);
+        ranges[i].minimum_hz = limits.min_frequency;
+        ranges[i].maximum_hz = limits.max_frequency;
+    }
+    return (int)dev->backend->band_count;
+}
+
+/* The first band, for callers written before multi-band support. */
 int birriasdr_get_tuning_range(const birriasdr_dev_t *dev, uint64_t *minimum, uint64_t *maximum)
 {
-    if (!dev || !minimum || !maximum)
+    struct birriasdr_tuning_range range;
+    int result;
+    if (!minimum || !maximum)
         return BIRRIASDR_ERROR_INVALID;
-    *minimum = dev->min_frequency ? dev->min_frequency : dev->backend->min_frequency;
-    *maximum = dev->max_frequency ? dev->max_frequency : dev->backend->max_frequency;
-    return *minimum && *maximum >= *minimum ? 0 : BIRRIASDR_ERROR_UNSUPPORTED;
+    if ((result = birriasdr_get_tuning_ranges(dev, &range, 1)) < 0)
+        return result;
+    *minimum = range.minimum_hz;
+    *maximum = range.maximum_hz;
+    return 0;
+}
+
+/* Replace one band's bounds while idle. Zero restores the board's value for
+ * that bound. The staged center must stay reachable, so the next read cannot
+ * start outside the ranges just reported.
+ */
+int birriasdr_set_tuning_range(birriasdr_dev_t *dev, unsigned band, uint64_t minimum,
+                               uint64_t maximum)
+{
+    struct bs_band backend, requested;
+    uint64_t low, high, frequency;
+    int result = 0;
+    if (!dev)
+        return BIRRIASDR_ERROR_INVALID;
+    pthread_mutex_lock(&dev->control_mutex);
+    if ((result = require_idle(dev)) < 0)
+        goto done;
+    if (band >= dev->backend->band_count) {
+        result = BIRRIASDR_ERROR_INVALID;
+        goto done;
+    }
+    backend = dev->backend->bands[band];
+    requested.min_frequency = minimum ? minimum : dev->board_bands[band].min_frequency;
+    requested.max_frequency = maximum ? maximum : dev->board_bands[band].max_frequency;
+    low = requested.min_frequency ? requested.min_frequency : backend.min_frequency;
+    high = requested.max_frequency ? requested.max_frequency : backend.max_frequency;
+    if (low < backend.min_frequency || low > backend.max_frequency ||
+        high < backend.min_frequency || high > backend.max_frequency) {
+        result = BIRRIASDR_ERROR_UNSUPPORTED;
+        goto done;
+    }
+    frequency = atomic_load(&dev->frequency);
+    if (low > high || (frequency >= backend.min_frequency && frequency <= backend.max_frequency &&
+                       (frequency < low || frequency > high))) {
+        result = BIRRIASDR_ERROR_INVALID;
+        goto done;
+    }
+    dev->bands[band] = requested;
+done:
+    pthread_mutex_unlock(&dev->control_mutex);
+    return result;
 }
 
 /* Stage a center while idle, or synchronously retune under the same mutex as
@@ -156,8 +243,7 @@ int birriasdr_set_center_freq(birriasdr_dev_t *dev, uint64_t frequency)
     result = dev->backend->validate(frequency, dev->rate, &dev->gain);
     if (result < 0)
         goto done;
-    if ((dev->min_frequency && frequency < dev->min_frequency) ||
-        (dev->max_frequency && frequency > dev->max_frequency)) {
+    if (!in_bands(dev, frequency)) {
         result = BIRRIASDR_ERROR_UNSUPPORTED;
         goto done;
     }
@@ -167,6 +253,9 @@ int birriasdr_set_center_freq(birriasdr_dev_t *dev, uint64_t frequency)
             result = BIRRIASDR_ERROR_UNSUPPORTED;
             goto done;
         }
+        if (dev->backend->validate_change &&
+            (result = dev->backend->validate_change(dev, frequency)) < 0)
+            goto done;
         result = dev->backend->change_frequency(dev, frequency);
         if (result < 0) {
             control_failed(dev, result, BIRRIASDR_STAGE_RF);

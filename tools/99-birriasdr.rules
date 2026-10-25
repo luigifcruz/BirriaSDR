@@ -1,0 +1,3 @@
+# BirriaSDR receivers: let the plugdev group open them without root.
+SUBSYSTEM=="usb", ATTR{idVendor}=="3574", ATTR{idProduct}=="6211", MODE="0660", GROUP="plugdev"
+SUBSYSTEM=="usb", ATTR{idVendor}=="0e8d", ATTR{idProduct}=="7961", MODE="0660", GROUP="plugdev"

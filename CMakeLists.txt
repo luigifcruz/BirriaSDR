@@ -21,7 +21,8 @@ find_package_handle_standard_args(LIBUSB REQUIRED_VARS LIBUSB_LIBRARY LIBUSB_INC
 set(BIRRIASDR_SOURCES
     src/device.c src/io.c src/usb.c src/usb_stream.c src/stream.c
     src/chips/mt7921_boot.c src/chips/mt7921_rf.c src/chips/mt7921_tune.c src/chips/mt7921_gain.c
-    src/chips/mt7921_capture.c src/chips/mt7921_filter.c src/chips/mt7921_frame.c src/chips/mt7925.c)
+    src/chips/mt7921_capture.c src/chips/mt7921_filter.c src/chips/mt7921_frame.c src/chips/mt7921_band.c
+    src/chips/mt7925.c)
 add_library(birriasdr_objects OBJECT ${BIRRIASDR_SOURCES})
 set_target_properties(birriasdr_objects PROPERTIES POSITION_INDEPENDENT_CODE ON C_VISIBILITY_PRESET hidden)
 target_compile_features(birriasdr_objects PUBLIC c_std_11)
@@ -137,6 +138,20 @@ if(BUILD_TESTING)
         target_link_options(test_startup_recovery PRIVATE -Wl,--wrap=libusb_reset_device -Wl,--wrap=libusb_bulk_transfer)
     endif()
     # Deliberately not registered with CTest: this resets a physical dongle.
+endif()
+
+# Optional SoapySDR module (driver=birria). Enabled when SoapySDR is installed;
+# the core library and birria_rx never depend on it. project() is C-only, so
+# the module's C++ sources need the CXX language enabled explicitly.
+option(BIRRIASDR_SOAPY "Build the SoapySDR module when SoapySDR is available" ON)
+if(BIRRIASDR_SOAPY)
+    find_package(SoapySDR CONFIG QUIET)
+    if(SoapySDR_FOUND)
+        enable_language(CXX)
+        add_subdirectory(soapy)
+    else()
+        message(STATUS "SoapySDR not found; skipping the birria module")
+    endif()
 endif()
 
 file(RELATIVE_PATH BIRRIA_PC_TO_PREFIX "${CMAKE_INSTALL_FULL_LIBDIR}/pkgconfig" "${CMAKE_INSTALL_PREFIX}")

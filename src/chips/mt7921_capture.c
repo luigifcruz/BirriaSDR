@@ -116,9 +116,17 @@ static int validate(uint64_t frequency, uint32_t rate, const struct birriasdr_ga
 {
     if (gain->lna > 3 || gain->lpf > 8 || gain->digital > 12)
         return BIRRIASDR_ERROR_INVALID;
-    if (frequency < MT_RF_MIN_HZ || frequency > MT_RF_MAX_HZ || rate != 40000000)
+    if (mt_band_of(frequency) == MT_BAND_NONE || rate != 40000000)
         return BIRRIASDR_ERROR_UNSUPPORTED;
     return 0;
+}
+
+/* The band profile is applied once per preparation, so a live change must stay
+ * in the prepared band. Rejecting here leaves the running capture untouched.
+ */
+static int validate_change(const birriasdr_dev_t *dev, uint64_t frequency)
+{
+    return mt_band_of(frequency) == mt_band_of(dev->frequency) ? 0 : BIRRIASDR_ERROR_UNSUPPORTED;
 }
 
 /* USB IDs identify a product, not necessarily its die revision. Read the digital
@@ -131,17 +139,27 @@ static int identify(birriasdr_dev_t *dev)
     return (chip & 0xffff) == 0x7961 ? 0 : BIRRIASDR_ERROR_UNSUPPORTED;
 }
 
+/* The command intervals of mt_band_of(), in its band order. */
+static const struct bs_band bands[] = {
+    {MT_RF_MIN_HZ, MT_RF_MAX_HZ},
+    {MT_RF_5G_MIN_HZ, MT_RF_6G_MIN_HZ - 1},
+    {MT_RF_6G_MIN_HZ, MT_RF_6G_MAX_HZ}
+};
+
 const struct bs_backend bs_mt7921_backend = {
     .chipset = BIRRIASDR_CHIP_MT7921,
     .name = "MT7961/MT7972",
     .capabilities = BIRRIASDR_CAP_RX | BIRRIASDR_CAP_RAW_GAIN | BIRRIASDR_CAP_LIVE_GAIN |
                     BIRRIASDR_CAP_TUNING | BIRRIASDR_CAP_LIVE_TUNING,
     .default_frequency = MT_RF_ANCHOR_HZ,
-    .min_frequency = MT_RF_MIN_HZ, .max_frequency = MT_RF_MAX_HZ,
+    .bands = bands, .band_count = sizeof(bands) / sizeof(bands[0]),
     .default_rate = 40000000,
     .validate = validate,
     .identify = identify,
     .prepare = mt_prepare, .start = mt_start, .stop = mt_stop,
     .status = mt_status, .reset = mt_reset, .change_gain = mt_change_gain,
-    .change_frequency = mt_change_frequency
+    .change_frequency = mt_change_frequency,
+    .validate_change = validate_change
 };
+
+_Static_assert(sizeof(bands) / sizeof(bands[0]) <= BS_MAX_BANDS, "too many MT7921 bands");

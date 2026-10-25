@@ -101,6 +101,43 @@ static void test_full_range(void)
     printf("%u consecutive tuning words round-trip across the public interval\n", last - first + 1);
 }
 
+/* The stock firmware's high-band words, read back from the A-die, use 18
+ * fractional bits. The plan must reproduce them and their calibration counts.
+ * Band membership follows the public command intervals, with gaps rejected.
+ */
+static void test_high_band(void)
+{
+    static const struct { uint64_t hz; uint32_t word, cycles; } stock[] = {
+        {UINT64_C(5180000000), 0x06799998, 0x611e}, {UINT64_C(5745000000), 0x072e6668, 0x6bb6},
+        {UINT64_C(5955000000), 0x07719998, 0x6fa6}, {UINT64_C(6455000000), 0x08119998, 0x7906},
+        {UINT64_C(7115000000), 0x08e4cccc, 0x8566}
+    };
+    struct mt_2g_tuning plan = {.word = 123};
+    for (size_t i = 0; i < sizeof(stock) / sizeof(stock[0]); ++i) {
+        CHECK(mt_plan_high(stock[i].hz, 18, &plan) == 0);
+        CHECK((plan.word & 0x7fffffff) == stock[i].word);
+        CHECK(plan.calibration_cycles == stock[i].cycles);
+        {
+            uint64_t nominal = plan.nominal_hz_num / plan.nominal_hz_den;
+            CHECK((nominal > stock[i].hz ? nominal - stock[i].hz : stock[i].hz - nominal) <= 96);
+        }
+        CHECK(mt_plan_high(stock[i].hz, MT_RF_FRACTION_BITS, &plan) == 0);
+        CHECK(((plan.word >> 20) & 0x3ff) == ((stock[i].word >> 20) & 0x3ff));
+    }
+    CHECK(mt_plan_high(UINT64_C(5180000000), 19, &plan) == BIRRIASDR_ERROR_INVALID);
+    CHECK(mt_plan_high(UINT64_MAX, 20, &plan) == BIRRIASDR_ERROR_INVALID);
+    CHECK(mt_band_of(MT_RF_MIN_HZ) == MT_BAND_2G && mt_band_of(MT_RF_MAX_HZ) == MT_BAND_2G);
+    CHECK(mt_band_of(MT_RF_MAX_HZ + 1) == MT_BAND_NONE);
+    CHECK(mt_band_of(MT_RF_5G_MIN_HZ - 1) == MT_BAND_NONE);
+    CHECK(mt_band_of(MT_RF_5G_MIN_HZ) == MT_BAND_5G);
+    CHECK(mt_band_of(MT_RF_6G_MIN_HZ - 1) == MT_BAND_5G);
+    CHECK(mt_band_of(MT_RF_6G_MIN_HZ) == MT_BAND_6G);
+    CHECK(mt_band_of(MT_RF_6G_MAX_HZ) == MT_BAND_6G);
+    CHECK(mt_band_of(MT_RF_6G_MAX_HZ + 1) == MT_BAND_NONE);
+    CHECK(mt_band_step(MT_STEP_GROUP, UINT64_C(6455000000)) == 13);
+    CHECK(mt_band_step(MT_STEP_LOOP, UINT64_C(6935000000)) == 8);
+}
+
 /* Run without USB access. Physical range and fine-step tests require a signal. */
 int main(void)
 {
@@ -108,5 +145,6 @@ int main(void)
     test_quantization();
     test_limits();
     test_full_range();
+    test_high_band();
     return 0;
 }

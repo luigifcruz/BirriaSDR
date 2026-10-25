@@ -24,6 +24,7 @@ const struct bs_backend bs_mt7921_backend = {0}, bs_mt7925_backend = {0};
 /* No baseline gain exists in this model; later RF initialization is unreachable. */
 int mt_restore_gain(birriasdr_dev_t *dev) { (void)dev; return 0; }
 int mt_restore_filter(birriasdr_dev_t *dev) { (void)dev; return 0; }
+int mt_restore_band(birriasdr_dev_t *dev) { (void)dev; return 0; }
 int mt_configure_filter(birriasdr_dev_t *dev) { (void)dev; abort(); }
 int mt_configure_capture(birriasdr_dev_t *dev) { (void)dev; abort(); }
 int mt_configure_rf(birriasdr_dev_t *dev) { (void)dev; abort(); }
