@@ -81,6 +81,8 @@ private:
     void onGap();
     void markGap();
     void onCallbackFailure();
+    int startWorker();
+    void stopWorker();
 
     static constexpr size_t kMaxQueuedSamples = 16u << 20; /* complex samples, ~64 MiB */
     static constexpr uint32_t kMaxRestarts = 3; /* device or transport faults per stream */
@@ -101,6 +103,9 @@ private:
     std::atomic<bool> active_{false};  /* between activateStream and deactivateStream */
     std::atomic<bool> running_{false}; /* the worker's library read has not returned */
     std::atomic<bool> callbackFailed_{false};
+    std::atomic<bool> restarting_{false};  /* a rate change is restarting the read */
+    std::atomic<unsigned> generation_{0};  /* counts rate-change restarts */
+    unsigned readerGeneration_ = 0;        /* generation the reader's chunk belongs to */
     std::mutex mutex_;
     std::condition_variable cond_;
     std::deque<std::vector<int16_t>> queue_; /* an empty chunk marks a gap */

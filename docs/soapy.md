@@ -18,9 +18,11 @@ converts samples to the requested format without resampling.
 
 Each frequency range is a command interval from the library, not measured RF
 coverage. A band that the board cannot reach is left out. The sample rate can
-change only while the stream is stopped. A request within 1 Hz of a listed rate
-is set to exactly that rate, and any other rate is refused. The module has no
-hardware timestamps, no serial number, no bandwidth control and no sensors.
+change while streaming: the module stops the read, changes the rate and starts
+it again. The next read returns `SOAPY_SDR_OVERFLOW`, and samples at the old
+rate are dropped. A request within 1 Hz of a listed rate is set to exactly that
+rate, and any other rate is refused. The module has no hardware timestamps, no
+serial number, no bandwidth control and no sensors.
 
 Errors from tuning, sample-rate changes and gain changes are logged, not
 thrown, because some front ends do not catch exceptions from these calls and
