@@ -154,8 +154,15 @@ must match, in order. The fixture covers the original bootstrap but not the
 later matched-filter setup. A separate four-register model checks that setup's
 analog and digital masks, preservation of unrelated bits, readback, failure at
 every I/O boundary and retry after a failed rollback. The current offline suite
-contains ten CTest cases. Additional fault tests cover standby readback failure,
-a wrong die, gain rollback and repeated gain restoration. The live-control tests
+contains twelve CTest cases. The UDP packetizer test checks the `birria_udp`
+option parsing, datagram boundaries across callbacks and gaps, little-endian
+encoding, dropped datagrams and send failures over a local socket pair, without
+hardware. The UDP interrupt test runs the program against a stub library whose
+read never delivers a sample. It checks that Ctrl-C still stops the read
+cleanly, and that a Ctrl-C sent while the device opens closes the device
+without starting one.
+Additional fault tests cover standby readback failure, a wrong die, gain
+rollback and repeated gain restoration. The live-control tests
 exercise concurrent setters, coherent settings readback, startup gates and
 failure-triggered cancellation. The gain register model also checks
 manual-to-manual rollback and repeated release and force cycles against the
