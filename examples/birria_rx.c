@@ -101,8 +101,10 @@ int main(int argc, char **argv)
         argument += 2;
     }
     if (argc - argument < 1 || argc - argument > 3 || rate > UINT32_MAX) {
-        fprintf(stderr, "Usage: %s --list | [--frequency Hz] [--rate 10000000|20000000|40000000|80000000] "
-                "output.cs16 [complex-samples [manual]]\n", argv[0]);
+        fprintf(stderr,
+                "Usage: %s --list | [--frequency Hz] [--rate 10000000|20000000|40000000|80000000]"
+                " output.cs16 [complex-samples [manual]]\n",
+                argv[0]);
         return 1;
     }
     if (argc - argument >= 2 && parse_number(argv[argument + 1], &recorder.limit))
