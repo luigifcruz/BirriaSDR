@@ -159,7 +159,8 @@ option parsing, datagram boundaries across callbacks and gaps, little-endian
 encoding, dropped datagrams and send failures over a local socket pair, without
 hardware. The UDP interrupt test runs the program against a stub library whose
 read never delivers a sample. It checks that Ctrl-C still stops the read
-cleanly, and that Ctrl-C during setup closes the device without starting one.
+cleanly, and that a Ctrl-C sent while the device opens closes the device
+without starting one.
 Additional fault tests cover standby readback failure, a wrong die, gain
 rollback and repeated gain restoration. The live-control tests
 exercise concurrent setters, coherent settings readback, startup gates and

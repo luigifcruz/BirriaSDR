@@ -16,12 +16,21 @@ enum { STUB_IDLE, STUB_RUNNING, STUB_CANCELLING };
 static atomic_uint stub_state = STUB_IDLE;
 static atomic_int stub_reads;
 static atomic_int stub_closes;
+static atomic_bool stub_slow_open; /* when set, open pauses half a second */
+static atomic_bool stub_opening;   /* set while that pause runs */
 
 /* Library stubs: everything succeeds except the read, described above. */
 const char *birriasdr_strerror(int error) { return error ? "error" : "success"; }
 int birriasdr_open(birriasdr_dev_t **dev, uint32_t index)
 {
+    const struct timespec tick = {.tv_nsec = 10000000};
     (void)index;
+    if (atomic_load(&stub_slow_open)) {
+        atomic_store(&stub_opening, true);
+        for (int i = 0; i < 50; ++i)
+            nanosleep(&tick, NULL);
+        atomic_store(&stub_opening, false);
+    }
     *dev = (birriasdr_dev_t *)&stub_state;
     return 0;
 }
@@ -106,6 +115,20 @@ static void *interrupt_later(void *unused)
     return NULL;
 }
 
+/* Send SIGINT while the stub open pauses, as a user would during a slow boot.
+ * Give up after five seconds, like interrupt_later.
+ */
+static void *interrupt_during_open(void *unused)
+{
+    const struct timespec tick = {.tv_nsec = 10000000};
+    (void)unused;
+    for (int i = 0; i < 500 && !atomic_load(&stub_opening); ++i)
+        nanosleep(&tick, NULL);
+    if (atomic_load(&stub_opening))
+        kill(getpid(), SIGINT);
+    return NULL;
+}
+
 int main(void)
 {
     char *argv[] = {(char *)"birria_udp", (char *)"--host", (char *)"127.0.0.1",
@@ -122,11 +145,21 @@ int main(void)
         return 1;
     }
 
-    /* The flag is still set, as after a Ctrl-C during setup: the program must
-     * close the device without starting a read.
+    /* Clear the flag and send a real SIGINT while the device opens. The program
+     * must close the device without starting a read. Restore the default action
+     * first, since the first run's handler is still installed: a handler that
+     * the program installs only after setup would then let the signal terminate
+     * this test.
      */
+    signal(SIGINT, SIG_DFL);
+    atomic_store(&interrupted, false);
+    atomic_store(&stub_slow_open, true);
+    if (pthread_create(&interrupter, NULL, interrupt_during_open, NULL))
+        return 1;
     result = birria_udp_program_main(5, argv);
-    if (result != 0 || atomic_load(&stub_reads) != 1 || atomic_load(&stub_closes) != 2) {
+    pthread_join(interrupter, NULL);
+    if (result != 0 || !atomic_load(&interrupted) || atomic_load(&stub_reads) != 1 ||
+        atomic_load(&stub_closes) != 2) {
         fprintf(stderr, "Ctrl-C during setup still started a read (exit %d)\n", result);
         return 1;
     }
