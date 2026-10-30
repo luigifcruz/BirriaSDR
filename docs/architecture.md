@@ -156,19 +156,24 @@ digital masks, preservation of unrelated bits, readback, failure at every I/O
 boundary and retry after a failed rollback. At 40 MSps it allows only the
 original four registers. At 10, 20 and 80 MSps it also checks the per-chain,
 channel and mode fields against values written out from the documented layout,
-the rate class latch pulses and the nearest-channel mapping. The current offline
-suite contains twelve CTest cases. The UDP packetizer test checks the
-`birria_udp` option parsing, datagram boundaries across callbacks and gaps,
-little-endian encoding, dropped datagrams and send failures over a local socket
-pair, without hardware. The UDP interrupt test runs the program against a stub
-library whose read never delivers a sample. It checks that Ctrl-C still stops
-the read cleanly, and that a Ctrl-C sent while the device opens closes the
-device without starting one. Additional fault tests cover standby readback
-failure, a wrong die, gain rollback and repeated gain restoration. The
-live-control tests exercise concurrent setters, coherent settings readback,
-startup gates and failure-triggered cancellation. The gain register model also
-checks manual-to-manual rollback and repeated release and force cycles against
-the original unforced baseline.
+the rate class latch pulses, a latch left high or stuck and the nearest-channel
+mapping. The RF sequence test also checks that capture setup at 10, 20 and 80
+MSps differs from 40 MSps only in the tap rate and packer bits. The current
+offline suite contains twelve CTest cases, or thirteen when SoapySDR is
+installed. The SoapySDR rate test builds the module against stub library
+functions and checks that it lists exactly the native rates, passes each one
+through and refuses any other value before it reaches the library. The UDP
+packetizer test checks the `birria_udp` option parsing, datagram boundaries
+across callbacks and gaps, little-endian encoding, dropped datagrams and send
+failures over a local socket pair, without hardware. The UDP interrupt test runs
+the program against a stub library whose read never delivers a sample. It checks
+that Ctrl-C still stops the read cleanly, and that a Ctrl-C sent while the
+device opens closes the device without starting one. Additional fault tests
+cover standby readback failure, a wrong die, gain rollback and repeated gain
+restoration. The live-control tests exercise concurrent setters, coherent
+settings readback, startup gates and failure-triggered cancellation. The gain
+register model also checks manual-to-manual rollback and repeated release and
+force cycles against the original unforced baseline.
 
 The tuning tests check exact divider words, fractional carry, arithmetic bounds
 and quantization error. By default, tuning uses all 20 fractional bits. The
