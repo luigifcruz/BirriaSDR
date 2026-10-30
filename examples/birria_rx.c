@@ -5,6 +5,7 @@
 #include "birriasdr.h"
 #include <errno.h>
 #include <signal.h>
+#include <stdbool.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -81,6 +82,45 @@ static int parse_number(const char *text, uint64_t *value)
     return 0;
 }
 
+struct arguments {
+    uint64_t frequency, rate, limit;
+    const char *output;
+    bool manual;
+};
+
+/* Parse [--frequency Hz] [--rate SPS] output.cs16 [complex-samples [manual]].
+ * Every option needs a value, and a token starting with "--" is never taken as
+ * the output file, so a missing value is a usage error instead of a capture.
+ */
+static int parse_arguments(int argc, char **argv, struct arguments *arguments)
+{
+    int argument = 1;
+    memset(arguments, 0, sizeof(*arguments));
+    while (argument < argc && !strncmp(argv[argument], "--", 2)) {
+        uint64_t *target;
+        if (!strcmp(argv[argument], "--frequency"))
+            target = &arguments->frequency;
+        else if (!strcmp(argv[argument], "--rate"))
+            target = &arguments->rate;
+        else
+            return -1;
+        if (argument + 1 >= argc || parse_number(argv[argument + 1], target))
+            return -1;
+        argument += 2;
+    }
+    if (argc - argument < 1 || argc - argument > 3 || arguments->rate > UINT32_MAX)
+        return -1;
+    arguments->output = argv[argument];
+    if (argc - argument >= 2 && parse_number(argv[argument + 1], &arguments->limit))
+        return -1;
+    if (argc - argument == 3) {
+        if (strcmp(argv[argument + 2], "manual"))
+            return -1;
+        arguments->manual = true;
+    }
+    return 0;
+}
+
 /* Record device 0, with optional center, finite count and raw manual gain codes.
  * Keep the example's flags small; applications can use the full public API.
  */
@@ -89,28 +129,21 @@ int main(int argc, char **argv)
     birriasdr_dev_t *dev = NULL;
     struct birriasdr_stream_stats stats;
     struct recorder recorder = {0};
-    uint64_t frequency = 0, rate = 0;
-    int result, close_result, argument = 1;
+    struct arguments arguments;
+    uint64_t frequency, rate;
+    int result, close_result;
     if (argc == 2 && !strcmp(argv[1], "--list"))
         return list_devices();
-    while (argc - argument >= 2 && (!strcmp(argv[argument], "--frequency") ||
-                                    !strcmp(argv[argument], "--rate"))) {
-        uint64_t *target = !strcmp(argv[argument], "--rate") ? &rate : &frequency;
-        if (parse_number(argv[argument + 1], target))
-            return 1;
-        argument += 2;
-    }
-    if (argc - argument < 1 || argc - argument > 3 || rate > UINT32_MAX) {
+    if (parse_arguments(argc, argv, &arguments)) {
         fprintf(stderr,
                 "Usage: %s --list | [--frequency Hz] [--rate 10000000|20000000|40000000|80000000]"
                 " output.cs16 [complex-samples [manual]]\n",
                 argv[0]);
         return 1;
     }
-    if (argc - argument >= 2 && parse_number(argv[argument + 1], &recorder.limit))
-        return 1;
-    if (argc - argument == 3 && strcmp(argv[argument + 2], "manual"))
-        return 1;
+    frequency = arguments.frequency;
+    rate = arguments.rate;
+    recorder.limit = arguments.limit;
     result = birriasdr_open(&dev, 0);
     if (result < 0) {
         fprintf(stderr, "Open: %s\n", birriasdr_strerror(result));
@@ -133,13 +166,13 @@ int main(int argc, char **argv)
             return 1;
         }
     }
-    recorder.file = fopen(argv[argument], "wbx");
+    recorder.file = fopen(arguments.output, "wbx");
     if (!recorder.file) {
         perror("Output (must not already exist)");
         birriasdr_close(dev);
         return 1;
     }
-    if (argc - argument == 3) {
+    if (arguments.manual) {
         const struct birriasdr_gain gain = {2, 8, 0};
         result = birriasdr_set_tuner_gain_mode(dev, 1);
         if (!result)
