@@ -59,7 +59,7 @@ Run the help command to see the accepted options:
 | `--device INDEX` | `0` | Selects a device from the `birria_rx --list` output |
 | `--packet-samples COUNT` | `2048` | Selects 1 to 16,376 complex samples per datagram |
 | `--recovery COUNT` | `3` | Selects the bounded full restart budget, and zero disables recovery |
-| `--manual` | Disabled | Selects LNA 2, filter stage 8 and digital 0 |
+| `--manual` | Disabled | Selects LNA 2, filter stage 8 and digital 0. These codes suit the 2.4 GHz band. The 5 GHz band needs LNA 4 or 5 for full sensitivity, which this option does not select |
 | `--help` | Not applicable | Prints the option summary without opening hardware |
 
 The following command selects device 1, changes the center frequency and sends

@@ -162,6 +162,7 @@ static int test_send_failures(void)
         send_samples(samples, 3, 0, &stream);
     CHECK(!stream.error);
     CHECK(stream.datagrams_dropped > 0);
+    CHECK(stream.samples_dropped == stream.datagrams_dropped * 3);
     close(sockets[0]);
     close(sockets[1]);
 
