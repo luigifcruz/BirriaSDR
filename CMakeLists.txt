@@ -139,6 +139,20 @@ if(BUILD_TESTING)
     # Deliberately not registered with CTest: this resets a physical dongle.
 endif()
 
+# Optional SoapySDR module (driver=birria). Enabled when SoapySDR is installed;
+# the core library and birria_rx never depend on it. project() is C-only, so
+# the module's C++ sources need the CXX language enabled explicitly.
+option(BIRRIASDR_SOAPY "Build the SoapySDR module when SoapySDR is available" ON)
+if(BIRRIASDR_SOAPY)
+    find_package(SoapySDR CONFIG QUIET)
+    if(SoapySDR_FOUND)
+        enable_language(CXX)
+        add_subdirectory(soapy)
+    else()
+        message(STATUS "SoapySDR not found; skipping the birria module")
+    endif()
+endif()
+
 file(RELATIVE_PATH BIRRIA_PC_TO_PREFIX "${CMAKE_INSTALL_FULL_LIBDIR}/pkgconfig" "${CMAKE_INSTALL_PREFIX}")
 file(RELATIVE_PATH BIRRIA_PC_TO_INCLUDE "${CMAKE_INSTALL_FULL_LIBDIR}/pkgconfig" "${CMAKE_INSTALL_FULL_INCLUDEDIR}")
 configure_file(birriasdr.pc.in birriasdr.pc @ONLY)
