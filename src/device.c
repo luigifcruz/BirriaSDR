@@ -137,6 +137,29 @@ int birriasdr_get_tuning_range(const birriasdr_dev_t *dev, uint64_t *minimum, ui
     return *minimum && *maximum >= *minimum ? 0 : BIRRIASDR_ERROR_UNSUPPORTED;
 }
 
+/* Report one band narrowed by board bounds. Callers iterate from index 0 until
+ * INVALID; a band the board cannot reach returns UNSUPPORTED and is skipped.
+ */
+int birriasdr_get_tuning_band(const birriasdr_dev_t *dev, uint32_t index,
+                              uint64_t *minimum, uint64_t *maximum)
+{
+    struct bs_band band;
+    if (!dev || !minimum || !maximum)
+        return BIRRIASDR_ERROR_INVALID;
+    if (dev->backend->bands) {
+        if (index >= dev->backend->band_count)
+            return BIRRIASDR_ERROR_INVALID;
+        band = dev->backend->bands[index];
+    } else {
+        if (index)
+            return BIRRIASDR_ERROR_INVALID;
+        band = (struct bs_band){dev->backend->min_frequency, dev->backend->max_frequency};
+    }
+    *minimum = dev->min_frequency > band.min_frequency ? dev->min_frequency : band.min_frequency;
+    *maximum = dev->max_frequency && dev->max_frequency < band.max_frequency ? dev->max_frequency : band.max_frequency;
+    return *minimum && *maximum >= *minimum ? 0 : BIRRIASDR_ERROR_UNSUPPORTED;
+}
+
 /* Stage a center while idle, or synchronously retune under the same mutex as
  * gain/start/stop/reset. The backend calibrates its synthesizer; it never rounds
  * to a Wi-Fi channel or silently translates this into host-side mixing.

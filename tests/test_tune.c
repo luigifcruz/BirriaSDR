@@ -101,6 +101,40 @@ static void test_full_range(void)
     printf("%u consecutive tuning words round-trip across the public interval\n", last - first + 1);
 }
 
+/* Vendor firmware readbacks on this die use 18-bit fractions; match them exactly.
+ * Then round-trip every 20-bit word across the 5 GHz command interval.
+ */
+static void test_5g_words(void)
+{
+    static const struct { uint64_t hz; uint32_t word, cycles; } vendor[] = {
+        {5180000000, 0x06799998, 0x611e}, {5200000000, 0x06800000, 0x617e},
+        {5500000000, 0x06e00000, 0x671e}, {5745000000, 0x072e6668, 0x6bb6},
+        {5825000000, 0x07480000, 0x6d36}
+    };
+    struct mt_2g_tuning lower, upper, plan;
+    for (size_t i = 0; i < sizeof(vendor) / sizeof(vendor[0]); ++i) {
+        CHECK(mt_plan_5g(vendor[i].hz, 18, &plan) == 0);
+        CHECK(plan.word == (0x80000000u | vendor[i].word));
+        CHECK(plan.calibration_cycles == vendor[i].cycles);
+    }
+    CHECK(mt_plan_5g(UINT64_C(5735000000), MT_RF_FRACTION_BITS, &plan) == 0);
+    CHECK(plan.word == 0x872b3333 && plan.calibration_cycles == 27526);
+    CHECK(mt_plan_5g(UINT64_C(5180000000), 19, &plan) == BIRRIASDR_ERROR_INVALID);
+    CHECK(mt_plan_5g(0, MT_RF_FRACTION_BITS, &plan) == BIRRIASDR_ERROR_INVALID);
+    CHECK(mt_plan_5g(UINT64_MAX, MT_RF_FRACTION_BITS, &plan) == BIRRIASDR_ERROR_INVALID);
+    CHECK(mt_plan_5g(UINT64_C(5180000000), MT_RF_FRACTION_BITS, NULL) == BIRRIASDR_ERROR_INVALID);
+    CHECK(!mt_frequency_supported(MT_RF_MAX_HZ + 1) && !mt_frequency_supported(MT_RF_5G_MIN_HZ - 1));
+    CHECK(mt_frequency_supported(MT_RF_5G_MIN_HZ) && mt_frequency_supported(MT_RF_5G_MAX_HZ));
+    CHECK(!mt_frequency_supported(MT_RF_5G_MAX_HZ + 1));
+    CHECK(mt_plan_5g(MT_RF_5G_MIN_HZ, MT_RF_FRACTION_BITS, &lower) == 0);
+    CHECK(mt_plan_5g(MT_RF_5G_MAX_HZ, MT_RF_FRACTION_BITS, &upper) == 0);
+    for (uint32_t divider = lower.word & 0x3fffffff; divider <= (upper.word & 0x3fffffff); ++divider) {
+        uint64_t frequency = ((uint64_t)divider * 50000000 + 524288) / 1048576;
+        CHECK(mt_plan_5g(frequency, MT_RF_FRACTION_BITS, &plan) == 0);
+        CHECK(plan.word == (0x80000000u | divider));
+    }
+}
+
 /* Run without USB access. Physical range and fine-step tests require a signal. */
 int main(void)
 {
@@ -108,5 +142,6 @@ int main(void)
     test_quantization();
     test_limits();
     test_full_range();
+    test_5g_words();
     return 0;
 }

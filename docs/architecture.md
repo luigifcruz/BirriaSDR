@@ -21,6 +21,10 @@ and the [MT7921 device reference](mt7921.md).
 | `src/chips/mt7925.c` | Explicitly unimplemented backend with no register writes |
 | `firmware/iq_stream.S` | Complete original device program and its constants |
 | `tools/rebuild_firmware.py` | Optional rebuild and verification of the header from the assembly |
+| `tools/99-birriasdr.rules` | Linux udev rule that lets the `plugdev` group open both supported IDs |
+| `soapy/Registration.cpp` | SoapySDR enumeration from USB descriptors and registration of `driver=birria` |
+| `soapy/Device.cpp` | SoapySDR settings, the stream worker thread, gap reporting and conversion to `CS16` or `CF32` at native rates |
+| `soapy/tests/test_soapy_stream.cpp` | Explicit hardware capture through the module, not registered with CTest |
 
 The common reader consumes the event and mailbox protocol of our original
 firmware. Another backend can implement the same protocol on its own hardware.
@@ -150,8 +154,15 @@ must match, in order. The fixture covers the original bootstrap but not the
 later matched-filter setup. A separate four-register model checks that setup's
 analog and digital masks, preservation of unrelated bits, readback, failure at
 every I/O boundary and retry after a failed rollback. The current offline suite
-contains ten CTest cases. Additional fault tests cover standby readback failure,
-a wrong die, gain rollback and repeated gain restoration. The live-control tests
+contains twelve CTest cases. The UDP packetizer test checks the `birria_udp`
+option parsing, datagram boundaries across callbacks and gaps, little-endian
+encoding, dropped datagrams and send failures over a local socket pair, without
+hardware. The UDP interrupt test runs the program against a stub library whose
+read never delivers a sample. It checks that Ctrl-C still stops the read
+cleanly, and that a Ctrl-C sent while the device opens closes the device
+without starting one.
+Additional fault tests cover standby readback failure, a wrong die, gain
+rollback and repeated gain restoration. The live-control tests
 exercise concurrent setters, coherent settings readback, startup gates and
 failure-triggered cancellation. The gain register model also checks
 manual-to-manual rollback and repeated release and force cycles against the
