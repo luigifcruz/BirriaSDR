@@ -94,31 +94,28 @@ static const struct filter_field {
 /* The original matched 40 MHz profile: analog code and digital class only. */
 static const uint32_t profile40_fields = FIELD_BIT(FIELD_ANALOG0) | FIELD_BIT(FIELD_ANALOG1) |
                                          FIELD_BIT(FIELD_DIGITAL0) | FIELD_BIT(FIELD_DIGITAL1);
-static const uint32_t chain_fields = FIELD_BIT(FIELD_CHAIN_WIDTH0) | FIELD_BIT(FIELD_CHAIN_WIDTH1) |
-                                     FIELD_BIT(FIELD_CHAIN_SHAPE0) | FIELD_BIT(FIELD_CHAIN_SHAPE1);
 
-/* The fields one rate owns, as a bit mask over fields[]. 10 MSps is the 20 MHz
- * profile plus 0x83081000/0x83091000[30:28] = 7, one of two extra codes in the
- * vendor firmware's bandwidth setup. Measured, it narrows the digital
- * filter to about 10 MHz: energy from just outside the 10 MHz span drops
- * about 20 dB instead of folding in at full strength.
+/* The fields one rate owns, as a bit mask over fields[]. The 40 MSps profile
+ * keeps its original four fields. The other rates own all twelve, writing zero
+ * to the ones they do not use, so a field left set by an earlier run cannot
+ * change their profile. 10 MSps is the 20 MHz profile plus
+ * 0x83081000/0x83091000[30:28] = 7, one of two extra codes in the vendor
+ * firmware's bandwidth setup. Measured, it narrows the digital filter to about
+ * 10 MHz: energy from just outside the 10 MHz span drops about 20 dB instead of
+ * folding in at full strength.
  */
 static uint32_t rate_fields(const birriasdr_dev_t *dev)
 {
-    uint32_t mask = profile40_fields;
     if (dev->rate == 40000000)
-        return mask;
-    mask |= chain_fields | FIELD_BIT(FIELD_CHANNEL);
-    if (mt_rate_packed(dev->rate))
-        mask |= FIELD_BIT(FIELD_MODE20);
-    if (dev->rate == 10000000)
-        mask |= FIELD_BIT(FIELD_NARROW0) | FIELD_BIT(FIELD_NARROW1);
-    return mask;
+        return profile40_fields;
+    return (1u << FIELD_COUNT) - 1u;
 }
 
 /* The value a rate writes to one field. At 10 and 20 MSps the channel field
  * gets the 2.4 GHz channel number nearest the requested center, as the vendor
- * writes for a 20 MHz channel.
+ * writes for a 20 MHz channel. Channel 14 (2484 MHz) is nearest above 2478 MHz.
+ * The field is set once per startup and not changed by live retunes, because
+ * its effect is not decoded.
  */
 static uint32_t field_value(const birriasdr_dev_t *dev, unsigned field)
 {
@@ -126,7 +123,7 @@ static uint32_t field_value(const birriasdr_dev_t *dev, unsigned field)
     if (mt_rate_packed(dev->rate) && field == FIELD_CHANNEL) {
         uint64_t mhz = dev->frequency / 1000000;
         uint32_t channel;
-        if (mhz >= 2482)
+        if (mhz > 2478)
             channel = 14;
         else if (mhz <= 2412)
             channel = 1;
