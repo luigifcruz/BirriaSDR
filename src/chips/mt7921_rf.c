@@ -252,7 +252,8 @@ static int initialize_chains(birriasdr_dev_t *dev)
 /* Final receive routing uses chain 0 (physical SPI 1), but its LO comes from
  * physical SPI 0's secondary synthesizer. Keep that idle bank's 1E4[7:6] set:
  * applying the active bank's value to both reproduced the weak-input fault.
- * RF 160[31:30]=0 preserves the bootstrap; mt_configure_filter() widens it later.
+ * RF 160[31:30]=0 preserves the bootstrap; mt_configure_filter() later applies
+ * the profile selected by the sample rate.
  */
 static int select_receive_path(birriasdr_dev_t *dev)
 {

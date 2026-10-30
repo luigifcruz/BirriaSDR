@@ -10,7 +10,7 @@ converts samples to the requested format without resampling.
 | Item | Value |
 | --- | --- |
 | Driver key | `driver=birria`. A dongle is selected by enumeration order with `index=N` |
-| Sample rates | 10, 20, 40 and 80 MSps, the native rates. The module does not resample, so an application that needs another rate decimates the stream itself |
+| Sample rates | 10, 20, 40 and 80 MSps, the native rates. The module does not resample, so an application that needs a lower rate decimates the stream itself |
 | Stream formats | `CS16` (native) and `CF32` |
 | Frequency range | One range per band, from `birriasdr_get_tuning_band()`, so front ends do not offer the gap between bands. The bands match the frequency tuning row of the README [specifications](../README.md#specifications) |
 | Gains | `LNA` 0 to 5, `LPF` 0 to 8 and `DIG` 0 to 12. These are raw codes, not dB. The 5 GHz band needs `LNA` 4 or 5 for full sensitivity |

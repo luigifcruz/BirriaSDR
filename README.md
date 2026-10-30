@@ -52,15 +52,15 @@ library embeds its assembled image.
 The tested hardware is the **COMFAST MT7961/MT7921AU dongle (`3574:6211`)**,
 which pairs an MT7961 digital die with an MT7972 analog die. By default the
 receiver is centered on Wi-Fi channel 6 (nominally 2437 MHz) and uses receive
-chain 0 at 40 million complex samples per second, or at 10, 20 or 80 million.
-The library can retune anywhere in the 2156 to 2610 MHz and 4500 to 6200 MHz
-bands, even while streaming and across bands. Each rate pairs an **analog filter
-with a digital bandwidth setting that matches its span**. The 10 MSps rate uses
-the 20 MHz analog setting with a narrower, about 10 MHz digital filter. At 40
-MSps on the tested board, the measured noise spectrum falls about 3 dB at ±18
-MHz. The filters do not fully reject signals outside the sampled span, so strong
-signals there can alias into the capture. Treat this as measured behavior rather
-than a calibrated, flat bandwidth guarantee.
+chain 0 at 40 million complex samples per second. You can select 10, 20 or 80
+million instead. The library can retune anywhere in the 2156 to 2610 MHz and
+4500 to 6200 MHz bands, even while streaming and across bands. Each rate pairs
+an **analog filter with a digital bandwidth setting that matches its span**. The
+10 MSps rate uses the 20 MHz analog setting with a narrower, about 10 MHz
+digital filter. At 40 MSps on the tested board, the measured noise spectrum
+falls about 3 dB at ±18 MHz. The filters do not fully reject signals outside the
+sampled span, so strong signals there can alias into the capture. Treat this as
+measured behavior rather than a calibrated, flat bandwidth guarantee.
 
 For more detail, see:
 
