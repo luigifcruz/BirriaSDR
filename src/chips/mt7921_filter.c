@@ -3,12 +3,12 @@
  */
 
 /*
- * MT7961/MT7972 matched receive bandwidth at 10, 20, 40 or 80 MSps
+ * MT7961/MT7972 receive bandwidth profiles for 10, 20, 40 and 80 MSps
  *
  * At 80 MSps the profile follows the vendor firmware's 80 MHz channel setup:
  * analog code 2, per-chain 0xb00/0xb04 fields, digital class 2
- * latched by a pulse of 0x8300c008/0x8301c008[31], and on 2.4 GHz
- * 0x830a0080[7:4] = 6. Without them the 80 MSps tap repeats 40 MSps samples.
+ * latched by a pulse of 0x8300c008/0x8301c008[31], and 0x830a0080[7:4] = 6 in
+ * both bands, a field whose effect is not decoded. Without them the 80 MSps tap repeats 40 MSps samples.
  * At 20 MSps it is the vendor's 20 MHz setup (codes 0, 0x83080000[12] set);
  * the capture packer then keeps one 80 MSps tap sample in four, so this filter
  * is what keeps the wider span from aliasing into the 20 MHz output.

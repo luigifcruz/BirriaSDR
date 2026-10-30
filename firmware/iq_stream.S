@@ -75,8 +75,9 @@ SOFTWARE.
     ori \reg, \reg, (\value & 0xfff)
     .endm
     /* Observe the live capture even while USB is stalled. One address unit is
-     * four SRAM bytes: one complex sample at 40 and 80 MSps, or half of a
-     * packed record at 10 and 20 MSps. The ring contains 65536 units, which
+     * four SRAM bytes: one complex sample at 40 and 80 MSps, or one of the
+     * four words in a packed record at 10 and 20 MSps, where each record holds
+     * two samples and two zero words. The ring contains 65536 units, which
      * last 1.6384 ms at 20 and 40 MSps and 0.8192 ms at 80 MSps. The 750 us
      * poll guard, still shorter than the 80 MSps ring, rejects ambiguous
      * producer movement before a whole ring can pass unnoticed.
