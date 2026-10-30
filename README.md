@@ -54,12 +54,13 @@ which pairs an MT7961 digital die with an MT7972 analog die. By default the
 receiver is centered on Wi-Fi channel 6 (nominally 2437 MHz) and uses receive
 chain 0 at 40 million complex samples per second, or at 10, 20 or 80 million.
 The library can retune anywhere in the 2156 to 2610 MHz and 4500 to 6200 MHz
-bands, even while streaming and across bands. Each rate pairs a **matched
-analog filter with the matching digital bandwidth setting**. At 40 MSps on the
-tested board, the measured noise spectrum falls about 3 dB at ±18 MHz.
-The filters do not fully reject signals outside the sampled span, so strong
-signals there can alias into the capture. Treat this as measured behavior
-rather than a calibrated, flat bandwidth guarantee.
+bands, even while streaming and across bands. Each rate pairs an **analog filter
+with a digital bandwidth setting that matches its span**. The 10 MSps rate uses
+the 20 MHz analog setting with a narrower, about 10 MHz digital filter. At 40
+MSps on the tested board, the measured noise spectrum falls about 3 dB at ±18
+MHz. The filters do not fully reject signals outside the sampled span, so strong
+signals there can alias into the capture. Treat this as measured behavior rather
+than a calibrated, flat bandwidth guarantee.
 
 For more detail, see:
 
@@ -75,7 +76,7 @@ For more detail, see:
 | Frequency tuning | 2156 to 2610 MHz, or 2190 to 2610 MHz on generic-ID boards, and 4500 to 6200 MHz, including live changes and band switches. Sensitivity is unverified; 5 GHz reception was checked from 5250 to 5815 MHz |
 | Tuning step | Nominally 28.61 Hz, using the full 20-bit fraction. Requests are in whole hertz with no Wi-Fi channel restriction. The physical response to fine steps is still unmeasured |
 | Sample rate | 10, 20, 40 or 80 MSps complex. The default is 40 MSps |
-| Sampled bandwidth | A span equal to the sample rate, with matching nominal analog and digital settings. See [filter characteristics](docs/mt7921.md#filtering) for rolloff and aliasing limits |
+| Sampled bandwidth | A span equal to the sample rate, with nominal analog and digital settings for that span. The 10 MSps rate uses the 20 MHz analog setting with a narrower digital filter. See [filter characteristics](docs/mt7921.md#filtering) for rolloff and aliasing limits |
 | Sample resolution | Signed 14-bit I and Q, from −8192 to 8191 |
 | Receive channels | One (chain 0) |
 | Transmit | None, receive only |

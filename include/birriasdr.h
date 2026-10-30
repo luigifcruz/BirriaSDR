@@ -107,7 +107,9 @@ struct birriasdr_stream_stats {
 /** Samples are interleaved native-endian int16_t I,Q in [-8192,8191].
  * count and first_sample count COMPLEX samples, not scalar components/bytes.
  * The buffer is borrowed until callback return; copy it to retain it. There
- * is no averaging, decimation, left shifting, or floating-point conversion.
+ * is no host-side averaging, decimation, left shifting, or floating-point
+ * conversion. At 10 and 20 MSps the device's capture packer keeps one tap
+ * sample in four before the samples reach the host.
  * Run callbacks promptly: a stalled consumer can overrun the device's SRAM.
  * The center-frequency setter/getter, tuning-range getter, raw-gain mode/code
  * setters, gain-code getter and cancel_async may be called from the callback;

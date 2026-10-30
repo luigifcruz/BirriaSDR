@@ -49,8 +49,8 @@
  * dumps. Several bias fields remain unidentified. Do not sort or deduplicate
  * writes: intermediate settings, action strobes and settling waits matter.
  * RF 0x160[31:30]=0 retains the established bootstrap profile during bring-up.
- * mt7921_filter.c then applies the matched analog/digital 40 MHz profile before
- * capture. Keep bootstrap ordering separate from the final bandwidth setting;
+ * mt7921_filter.c then applies the analog/digital profile for the sample rate
+ * before capture. Keep bootstrap ordering separate from the final bandwidth setting;
  * calibrated passband, other bands and full calibration remain unqualified.
  * See docs/mt7921.md for an overview and tests/python-channel6.trace for writes.
  */

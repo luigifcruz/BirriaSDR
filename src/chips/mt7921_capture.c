@@ -53,8 +53,9 @@
 /* ICAP writes consecutive raw14 Q,I pairs into a 256 KiB circular SRAM.
  * The original MCU program later watches its producer pointer and submits
  * serial DMA descriptors referencing that SRAM directly. This host setup
- * selects receive-only MAC clocks, the chain-0 tap and the dense 40 MSps mode;
- * it leaves capture stopped until bulk-IN requests have been queued.
+ * selects receive-only MAC clocks, the chain-0 tap, its rate and, at 10 and
+ * 20 MSps, the packer; it leaves capture stopped until bulk-IN requests have
+ * been queued.
  */
 int mt_configure_capture(birriasdr_dev_t *dev)
 {
