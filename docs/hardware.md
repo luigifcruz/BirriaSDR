@@ -13,10 +13,10 @@ The RF front end tunes and filters the input. The chip's capture engine writes
 complex samples into internal memory, and our RAM-resident device program
 submits that memory to USB DMA. The host checks the resulting stream and
 delivers I/Q samples to the application. The implemented backend pairs a
-nominal 40 MHz analog filter with the corresponding digital bandwidth class at
-40 MSps complex. The sampled span is 40 MHz, and the
-[filter reference](mt7921.md#filtering) documents the measured rolloff and
-out-of-span rejection. Sample packing, memory layout and register sequences all
+nominal analog filter with the corresponding digital bandwidth class at each
+supported rate of 10, 20, 40 or 80 MSps complex. The sampled span equals the
+rate, and the [filter reference](mt7921.md#filtering) documents the measured
+rolloff and out-of-span rejection. Sample packing, memory layout and register sequences all
 belong to the chipset backend.
 
 The device never receives vendor RAM firmware or a ROM patch. The current

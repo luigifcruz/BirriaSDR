@@ -258,7 +258,7 @@ int birriasdr_get_tuner_gains(birriasdr_dev_t *dev, int *gains, size_t capacity)
 int birriasdr_set_agc_mode(birriasdr_dev_t *dev, int enabled);
 
 /** Reserved: independently selectable RF filter bandwidth in Hz. The backend
- * applies its fixed nominal 40 MHz profile automatically. This setter remains
+ * applies the nominal profile that matches the sample rate. This setter remains
  * UNSUPPORTED until additional widths and their RF response are qualified.
  */
 int birriasdr_set_tuner_bandwidth(birriasdr_dev_t *dev, uint32_t bandwidth_hz);
