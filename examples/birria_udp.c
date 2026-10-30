@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: MIT
  * Copyright (c) 2026 The BirriaSDR Authors
- * Stream raw little-endian CS16 I/Q datagrams to SDR++ Network Source.
+ * Stream raw little-endian CS16 I/Q datagrams to any UDP receiver.
  */
 #include "birriasdr.h"
 #include <errno.h>
@@ -237,7 +237,7 @@ static int send_datagram(struct udp_stream *stream, const int16_t *iq, uint32_t 
     return -1;
 }
 
-/* Datagram boundaries carry no metadata. SDR++ treats each payload as raw CS16. */
+/* Datagram boundaries carry no metadata. Receivers treat each payload as raw CS16. */
 static void send_samples(const int16_t *iq, uint32_t count, uint64_t first, void *context)
 {
     struct udp_stream *stream = context;

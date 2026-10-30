@@ -5,27 +5,26 @@ the receiver's samples as raw UDP datagrams. It builds with the other examples,
 as the [build steps](../README.md#build-and-try) describe, and it needs the same
 device setup as the recorder.
 
-## Stream samples to SDR++
+## Stream samples over UDP
 
 The `birria_udp` program sends raw little-endian CS16 datagrams. It adds no
-packet header, sequence number, timestamp or control data. The payload can feed
-the Network source that ships with SDR++.
+packet header, sequence number, timestamp or control data. Any application or
+tool that reads raw interleaved signed 16-bit I/Q from a UDP port can receive
+the stream.
 
-### Configure SDR++
+### Configure the receiver
 
-Configure the source before you start `birria_udp`:
+Configure the receiving application before you start `birria_udp`:
 
-1. Select **Network** in the SDR++ source list.
-2. Set **Protocol** to **UDP**.
-3. Set **Host** to `127.0.0.1`.
-4. Set **Port** to `1234`.
-5. Set **Sample type** to **Int16**.
-6. Set **Samplerate** to `40000000`, then apply the value.
-7. Start the SDR++ source.
+1. Select its UDP or network input.
+2. Set it to listen on port `1234`, or the port you pass with `--port`.
+3. Set the sample type to signed 16-bit complex, often labeled Int16 or CS16.
+4. Set the sample rate to 40 MSps (`40000000`).
+5. Start the receiver.
 
-The host field does not make SDR++ connect to a server. The Network source binds
-its local UDP port and waits for datagrams. Start SDR++ first so the initial
-datagrams have a receiver.
+The sender does not connect to a server. The receiver binds its local UDP port
+and waits for datagrams. Start the receiver first so the initial datagrams have
+somewhere to go.
 
 ### Start the UDP sender
 
@@ -40,8 +39,8 @@ complex samples in each datagram and permits three bounded recovery restarts.
 The manual option selects the same LNA 2, filter stage 8 and digital 0 codes as
 the recorder.
 
-Keep the SDR++ displayed center frequency equal to the frequency passed to
-`birria_udp`. This keeps the frequency labels aligned with the actual receiver
+Set the receiving application's center frequency to the frequency passed to
+`birria_udp`. This keeps its frequency labels aligned with the actual receiver
 center.
 
 ### Command line options
@@ -64,7 +63,7 @@ Run the help command to see the accepted options:
 | `--help` | Not applicable | Prints the option summary without opening hardware |
 
 The following command selects device 1, changes the center frequency and sends
-larger datagrams to a local SDR++ instance:
+larger datagrams to a receiver on the local host:
 
 ```sh
 ./build/birria_udp \
@@ -107,15 +106,15 @@ size. The default 8,192-byte payload requires IP fragmentation on a standard
 
 The samples remain unshifted so the UDP output matches recorder files and
 library callbacks. Their peak hardware range occupies about one quarter of the
-signed 16-bit numeric range. The SDR++ application can therefore show a dBFS
-reference about 12 dB below a source that fills all 16 bits, but the transport
-does not discard sample bits.
+signed 16-bit numeric range. A receiver that scales to the full 16-bit range can
+therefore show a dBFS reference about 12 dB below a source that fills all 16
+bits, but the transport does not discard sample bits.
 
 ## Frequency control
 
-The SDR++ Network source does not send its tuning changes back to `birria_udp`.
-Changing the SDR++ center frequency changes the display and tuning view, but it
-does not change the hardware receiver center.
+The raw stream has no return channel, so a receiving application cannot tune
+the hardware. Changing its center frequency changes only its display and tuning
+view, not the hardware receiver center.
 
 Stop the sender with Ctrl-C and restart it with another frequency when you need
 to retune:
@@ -125,9 +124,8 @@ to retune:
 ```
 
 The library supports live hardware tuning, but this raw UDP example has no
-return control channel or interactive command interface. A native SDR++ source
-module or a separate control protocol would be required for direct tuning and
-gain control from the SDR++ interface.
+control channel or interactive command interface. For tuning and gain control
+from an application, use the [SoapySDR module](soapy.md) instead.
 
 ## Recovery, loss and shutdown
 
@@ -140,7 +138,7 @@ The UDP socket is nonblocking so a slow or absent receiver does not hold the
 library callback indefinitely. The sender counts datagrams rejected by its local
 socket as dropped. It cannot detect datagrams lost after the local kernel
 accepts them because the raw stream has no acknowledgements or sequence numbers.
-The SDR++ application also cannot identify the missing sample count.
+The receiving application cannot identify the missing sample count either.
 
 Press Ctrl-C to stop. The program cancels the read, drains device packets that
 are already in flight, closes the socket and device, then prints sample,
@@ -149,24 +147,24 @@ capture, network submission or cleanup reported an error.
 
 ## Troubleshooting
 
-### SDR++ shows no spectrum
+### The receiver shows no spectrum
 
-Confirm that SDR++ is running the Network source before you start the sender.
-Check that both programs use the same port, that the sample type is Int16 and
-that the applied sample rate is `40000000`. Check the terminal for an open,
+Confirm that the receiver is listening before you start the sender. Check that
+both programs use the same port, that the sample type is signed 16-bit complex
+and that the sample rate is `40000000`. Check the terminal for an open,
 permission or device error.
 
 ### The frequency labels are wrong
 
-Set the SDR++ displayed center to the same value passed through `--frequency`.
-The Network source cannot read the receiver frequency from the datagrams.
+Set the receiving application's center frequency to the same value passed
+through `--frequency`. The datagrams do not carry the receiver frequency.
 
 ### The program reports dropped datagrams
 
 Keep the destination on the local host first. Reduce other system load and
-confirm that SDR++ can process a 40 MSps source. A larger packet sample count
-reduces packet and callback frequency, but larger datagrams increase
-fragmentation and loss risk on a physical network.
+confirm that the receiving application can process a 40 MSps source. A larger
+packet sample count reduces packet and callback frequency, but larger datagrams
+increase fragmentation and loss risk on a physical network.
 
 ### The program cannot open the dongle
 
@@ -180,17 +178,11 @@ Remember that the source preserves 14-bit values without shifting them into the
 full signed 16-bit range. This affects the displayed full scale reference, not
 the number of source bits delivered.
 
-## Gqrx compatibility
-
-The raw UDP format in `birria_udp` targets the SDR++ Network source. This
-example does not provide a direct Gqrx input device. A Gqrx path needs a
-compatible SoapySDR, gr-osmosdr or `rtl_tcp` adapter instead of the current raw
-UDP receiver setup.
-
 ## Test the UDP packetizer
 
 The offline UDP test checks option parsing, datagram boundaries and
-little-endian CS16 encoding. It does not open hardware or run SDR++.
+little-endian CS16 encoding. It opens no hardware and needs no receiving
+application.
 
 ```sh
 ctest --test-dir build -R udp_packetizer --output-on-failure
