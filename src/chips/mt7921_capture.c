@@ -57,6 +57,17 @@
  * 20 MSps, the packer; it leaves capture stopped until bulk-IN requests have
  * been queued.
  */
+/* Read back the bits a rate owns and fail if they did not take, so a setting
+ * the hardware ignored cannot start a capture in the wrong format or rate.
+ */
+static int verify_rate_bits(birriasdr_dev_t *dev, uint32_t address, uint32_t mask,
+                            uint32_t expected)
+{
+    uint32_t value;
+    BS_TRY(bs_read32(dev, BS_MMIO, address, &value));
+    return (value & mask) == expected ? 0 : BIRRIASDR_ERROR_STATE;
+}
+
 int mt_configure_capture(birriasdr_dev_t *dev)
 {
     uint32_t value;
@@ -85,6 +96,7 @@ int mt_configure_capture(birriasdr_dev_t *dev)
      */
     BS_TRY(bs_update32(dev, BS_MMIO, 0x800210b8, 0xf0000,
                         mt_rate_packed(dev->rate) ? 0x9c020000 : 0x9c000000));
+    BS_TRY(verify_rate_bits(dev, 0x800210b8, 0x20000, mt_rate_packed(dev->rate) ? 0x20000 : 0));
     BS_TRY(bs_update32(dev, BS_MMIO, 0x830ad440, 0xff, 0x80000013));
     /* Bits 19:18 select the tap rate, 40 MSps << (3 - m): 3 for 40 MSps, 2 for
      * 80 MSps. 20 and 10 MSps use the 80 and 40 MSps taps with the packer
@@ -92,6 +104,8 @@ int mt_configure_capture(birriasdr_dev_t *dev)
      */
     BS_TRY(bs_update32(dev, BS_MMIO, 0x830ad448, 0x0fffffff,
                         mt_rate_fast_tap(dev->rate) ? 0x00880400 : 0x008c0400));
+    BS_TRY(verify_rate_bits(dev, 0x830ad448, 0xc0000,
+                            mt_rate_fast_tap(dev->rate) ? 0x80000 : 0xc0000));
     BS_TRY(bs_update32(dev, BS_MMIO, 0x88009004, 0, 0x0f000000));
     return bs_write32(dev, BS_MMIO, 0x80021090, 0x4f1);
 }

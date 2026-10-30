@@ -24,7 +24,7 @@ enum { RF0_160, RF1_160, DIG0, DIG1, RF0_B00, RF1_B00, RF0_B04, RF1_B04, CHANNEL
 struct model {
     uint32_t value[REGISTERS];
     unsigned operations, fail_at, fail_again, writes, latch_pulses;
-    bool drop_write, wide, stick_latch;
+    bool drop_write, wide, stick_latch, drop_latch_set;
 };
 static const uint32_t baseline[REGISTERS] = {
     0x2a123456, 0x17654321, 0xa0abcdef, 0xd0765432, 0x3f00a5a5, 0x15005a5a,
@@ -39,17 +39,28 @@ static int access_word(struct model *model, unsigned field, uint32_t *value, boo
         return BIRRIASDR_ERROR_IO;
     if (write) {
         ++model->writes;
-        if ((field == LATCH0 || field == LATCH1) && (*value & 0x80000000u) &&
-            !(model->value[field] & 0x80000000u))
-            ++model->latch_pulses;
-        /* A stuck latch ignores the one write that should clear its high bit. */
+        const bool rising = (field == LATCH0 || field == LATCH1) && (*value & 0x80000000u) &&
+                            !(model->value[field] & 0x80000000u);
+        /* A stuck latch ignores the one write that should clear its high bit,
+         * and a lost set ignores the one write that should raise it. Only a
+         * write that lands counts as a pulse.
+         */
         if (model->stick_latch && field == LATCH0 && !(*value & 0x80000000u) &&
             (model->value[field] & 0x80000000u)) {
             model->stick_latch = false;
             return 0;
         }
-        if (model->drop_write) model->drop_write = false;
-        else model->value[field] = *value;
+        if (model->drop_latch_set && field == LATCH0 && rising) {
+            model->drop_latch_set = false;
+            return 0;
+        }
+        if (model->drop_write) {
+            model->drop_write = false;
+        } else {
+            if (rising)
+                ++model->latch_pulses;
+            model->value[field] = *value;
+        }
     } else {
         *value = model->value[field];
     }
@@ -214,6 +225,19 @@ static void test_latch(void)
     CHECK(mt_configure_filter(&dev) == BIRRIASDR_ERROR_STATE);
     CHECK(!dev.mt7921.filter_saved);
     check_restored(&model, 0);
+
+    /* A lost set leaves the bit low, which readback cannot tell from a pulse
+     * the hardware cleared itself. The setup succeeds with one pulse missing,
+     * as documented.
+     */
+    initialize(&model, &dev);
+    model.wide = true;
+    dev.rate = 80000000;
+    dev.frequency = 2437000000u;
+    model.drop_latch_set = true;
+    CHECK(mt_configure_filter(&dev) == 0);
+    CHECK(model.latch_pulses == 1);
+    CHECK(mt_restore_filter(&dev) == 0);
 }
 
 /* At 10 and 20 MSps the channel field holds the nearest 2.4 GHz channel,

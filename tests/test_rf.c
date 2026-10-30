@@ -15,6 +15,7 @@ struct model {
     bool stuck_standby;
     uint32_t fail_address;
     bool fail_after_write;
+    uint32_t ignore_address; /* a write here is recorded but does not take */
 };
 
 /* A sparse map models register readbacks, not the production implementation. */
@@ -83,6 +84,8 @@ static int write32(void *context, enum bs_space space, uint32_t address, uint32_
     }
     CHECK(model->written < 2048);
     model->writes[model->written++] = (struct word){target, address, value};
+    if (address == model->ignore_address && model->ignore_address)
+        return 0;
     if (target >= 16 && (address == 0xc68 || address == 0xca8))
         value &= 0x7fffffff;
     if (target == 21 && address == 0xb00 && model->stuck_standby)
@@ -456,6 +459,20 @@ static void test_capture_rates(void)
             }
         }
         CHECK(taps == 1 && packers == 1);
+
+        /* An ignored tap write is caught at every rate, and an ignored packer
+         * write wherever the packer must change.
+         */
+        initialize(&model, &dev);
+        dev.rate = rates[r];
+        model.ignore_address = 0x830ad448;
+        CHECK(mt_configure_capture(&dev) == BIRRIASDR_ERROR_STATE);
+        if (packed) {
+            initialize(&model, &dev);
+            dev.rate = rates[r];
+            model.ignore_address = 0x800210b8;
+            CHECK(mt_configure_capture(&dev) == BIRRIASDR_ERROR_STATE);
+        }
     }
 }
 

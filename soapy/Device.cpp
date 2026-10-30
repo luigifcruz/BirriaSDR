@@ -244,13 +244,16 @@ void SoapyBirria::setSampleRate(const int, const size_t, const double rate)
         SoapySDR::log(SOAPY_SDR_ERROR, "birria: cannot change the sample rate while streaming");
         return;
     }
-    /* Check the list before narrowing, so a huge value cannot wrap to a valid rate. */
-    if (std::none_of(std::begin(kNativeRates), std::end(kNativeRates),
-                     [rate](double native) { return std::fabs(rate - native) < 1.0; })) {
+    /* Match the request within 1 Hz of a native rate and forward that exact
+     * rate, so neither a huge value nor a fractional one reaches the library.
+     */
+    const double *native = std::find_if(std::begin(kNativeRates), std::end(kNativeRates),
+                                        [rate](double n) { return std::fabs(rate - n) < 1.0; });
+    if (native == std::end(kNativeRates)) {
         SoapySDR::log(SOAPY_SDR_ERROR, "birria: the sample rate must be a native rate");
         return;
     }
-    if (report(birriasdr_set_sample_rate(dev_, static_cast<uint32_t>(std::llround(rate))),
+    if (report(birriasdr_set_sample_rate(dev_, static_cast<uint32_t>(*native)),
                "set_sample_rate"))
         rate_ = birriasdr_get_sample_rate(dev_);
 }

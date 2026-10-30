@@ -5,7 +5,8 @@
 /* Test the module's sample rates without hardware. Device.cpp is built
  * against stub library functions that record the rate the module requests.
  * The module must list exactly the native rates, pass each one through
- * unchanged and refuse any other value before it reaches the library.
+ * unchanged, forward a request within 1 Hz as the exact native rate and refuse
+ * any other value before it reaches the library.
  */
 #include "../SoapyBirria.hpp"
 #include <SoapySDR/Logger.h>
@@ -86,9 +87,17 @@ int main()
         CHECK(dev.getSampleRate(SOAPY_SDR_RX, 0) == rate);
     }
 
+    /* A request within 1 Hz of a native rate reaches the library as that exact
+     * rate, never rounded to a neighboring value.
+     */
+    dev.setSampleRate(SOAPY_SDR_RX, 0, 10000000.75);
+    CHECK(stub_rate == 10000000);
+    dev.setSampleRate(SOAPY_SDR_RX, 0, 79999999.5);
+    CHECK(stub_rate == 80000000);
+
     /* Refused values never reach the library, and the rate stays at 80 MSps. */
     const unsigned calls = stub_rate_calls;
-    for (double rate : {5e6, 60e6, 160e6, 4334967296.0, -40e6, std::nan("")})
+    for (double rate : {5e6, 60e6, 160e6, 4334967296.0, -40e6, 10000001.0, std::nan("")})
         dev.setSampleRate(SOAPY_SDR_RX, 0, rate);
     CHECK(stub_rate_calls == calls);
     CHECK(dev.getSampleRate(SOAPY_SDR_RX, 0) == 80e6);
