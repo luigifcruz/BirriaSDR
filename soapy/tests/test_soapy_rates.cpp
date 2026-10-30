@@ -33,6 +33,24 @@ static std::atomic<uint32_t> stub_rate{40000000};
 static unsigned stub_rate_calls;
 static std::atomic<bool> stub_reading{false}, stub_cancel{false};
 static std::atomic<unsigned> stub_reads{0}, stub_busy_rate_calls{0};
+static std::atomic<bool> stub_fail_read{false}; /* the next read ends at once with an error */
+
+/* Test hooks compiled into Device.cpp for this test. The read hook pauses one
+ * armed read between taking a chunk and copying it, for up to 300 ms, and
+ * records whether a rate change completed meanwhile.
+ */
+static std::atomic<bool> hook_armed{false}, hook_paused{false}, setter_done{false},
+    setter_done_during_pause{false}, fail_worker_start{false};
+void soapy_birria_read_hook()
+{
+    if (!hook_armed.exchange(false))
+        return;
+    hook_paused = true;
+    for (int i = 0; i < 300 && !setter_done; ++i)
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    setter_done_during_pause = setter_done.load();
+}
+bool soapy_birria_fail_worker_start() { return fail_worker_start.exchange(false); }
 
 /* Library stubs: only the rate setter and getter keep state. */
 extern "C" {
@@ -80,6 +98,8 @@ int birriasdr_read_async(birriasdr_dev_t *, birriasdr_read_async_cb_t callback, 
 {
     static int16_t iq[2 * 1024];
     ++stub_reads;
+    if (stub_fail_read.exchange(false))
+        return BIRRIASDR_ERROR_IO;
     stub_cancel = false;
     stub_reading = true;
     const int16_t tag = static_cast<int16_t>(stub_rate / 1000000);
@@ -179,6 +199,131 @@ int main()
     CHECK(events == "aOb");
     CHECK(stub_rate == 20000000 && stub_reads == 2 && reads == 2);
     CHECK(stub_busy_rate_calls == 0);
+
+    /* Toggle the rate rapidly while a reader reads odd sizes, so it often holds
+     * part of a chunk. A read that starts after a change has returned must
+     * never contain samples at the old rate, and no read may mix two rates.
+     * While a change is in progress the expected rate is unknown (zero), and
+     * reads that start then are not checked.
+     */
+    std::atomic<int> committed{20};
+    std::atomic<unsigned> violations{0}, overflows{0};
+    stream = dev.setupStream(SOAPY_SDR_RX, SOAPY_SDR_CS16);
+    CHECK(dev.activateStream(stream) == 0);
+    stop = false;
+    std::thread toggler_reader([&] {
+        static int16_t buf[2 * 1500];
+        void *buffs[] = {buf};
+        while (!stop) {
+            int flags = 0;
+            long long time = 0;
+            const int expected = committed;
+            const int n = dev.readStream(stream, buffs, 1500, flags, time, 100000);
+            if (n == SOAPY_SDR_OVERFLOW)
+                ++overflows;
+            for (int i = 1; i < n; ++i)
+                if (buf[2 * i] != buf[0])
+                    ++violations;
+            if (n > 0 && expected != 0 && buf[0] != expected)
+                ++violations;
+        }
+    });
+    for (int i = 0; i < 30; ++i) {
+        const int next = committed == 20 ? 40 : 20;
+        committed = 0;
+        dev.setSampleRate(SOAPY_SDR_RX, 0, next * 1e6);
+        committed = next;
+        std::this_thread::sleep_for(std::chrono::milliseconds(3 + i % 7));
+    }
+    stop = true;
+    toggler_reader.join();
+    CHECK(violations == 0);
+    CHECK(overflows > 0);
+    CHECK(stub_busy_rate_calls == 0);
+
+    /* Pause a read between taking a chunk and copying it, and change the rate
+     * meanwhile. The change must wait for that read, so it cannot complete
+     * while old-rate samples are still being copied.
+     */
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    {
+        static int16_t buf[2 * 1500];
+        void *buffs[] = {buf};
+        int flags = 0;
+        long long time = 0;
+        const int before = committed;
+        hook_armed = true;
+        std::thread paused_reader([&] {
+            const int n = dev.readStream(stream, buffs, 1500, flags, time, 500000);
+            CHECK(n > 0 && buf[0] == before);
+        });
+        for (int i = 0; i < 2000 && !hook_paused; ++i)
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        CHECK(hook_paused);
+        std::thread setter([&] {
+            dev.setSampleRate(SOAPY_SDR_RX, 0, before == 20 ? 40e6 : 20e6);
+            setter_done = true;
+        });
+        paused_reader.join();
+        setter.join();
+        CHECK(!setter_done_during_pause);
+        committed = before == 20 ? 40 : 20;
+        hook_paused = false;
+        setter_done = false;
+    }
+
+    /* A restart whose worker cannot start must end the stream with an error
+     * after the overflow, never leave reads timing out forever.
+     */
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    fail_worker_start = true;
+    dev.setSampleRate(SOAPY_SDR_RX, 0, dev.getSampleRate(SOAPY_SDR_RX, 0) == 80e6 ? 10e6 : 80e6);
+    {
+        std::string started;
+        for (int i = 0; i < 20 && (started.empty() || started.back() != 'E'); ++i) {
+            static int16_t buf[2 * 1024];
+            void *buffs[] = {buf};
+            int flags = 0;
+            long long time = 0;
+            const int n = dev.readStream(stream, buffs, 1024, flags, time, 100000);
+            started += n == SOAPY_SDR_OVERFLOW      ? 'O'
+                       : n == SOAPY_SDR_STREAM_ERROR ? 'E'
+                       : n == SOAPY_SDR_TIMEOUT      ? 'T'
+                                                     : 'd';
+        }
+        if (started != "OE")
+            fprintf(stderr, "after failed worker start: %s\n", started.c_str());
+        CHECK(started == "OE");
+    }
+    CHECK(dev.deactivateStream(stream) == 0);
+    CHECK(dev.activateStream(stream) == 0);
+    committed = static_cast<int>(dev.getSampleRate(SOAPY_SDR_RX, 0) / 1e6);
+
+    /* A restart whose read fails at once must end the stream with an error
+     * after the overflow, never leave reads timing out forever.
+     */
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    stub_fail_read = true;
+    dev.setSampleRate(SOAPY_SDR_RX, 0, dev.getSampleRate(SOAPY_SDR_RX, 0) == 20e6 ? 40e6 : 20e6);
+    std::string after;
+    for (int i = 0; i < 20 && (after.empty() || after.back() != 'E'); ++i) {
+        static int16_t buf[2 * 1024];
+        void *buffs[] = {buf};
+        int flags = 0;
+        long long time = 0;
+        const int n = dev.readStream(stream, buffs, 1024, flags, time, 100000);
+        if (n == SOAPY_SDR_OVERFLOW)
+            after += 'O';
+        else if (n == SOAPY_SDR_STREAM_ERROR)
+            after += 'E';
+        else if (n == SOAPY_SDR_TIMEOUT)
+            after += 'T';
+    }
+    if (after != "OE")
+        fprintf(stderr, "after failed restart: %s\n", after.c_str());
+    CHECK(after == "OE");
+    CHECK(dev.deactivateStream(stream) == 0);
+    dev.closeStream(stream);
 
     puts("SoapySDR native sample rate tests passed");
     return 0;

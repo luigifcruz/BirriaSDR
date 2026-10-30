@@ -103,9 +103,12 @@ private:
     std::atomic<bool> active_{false};  /* between activateStream and deactivateStream */
     std::atomic<bool> running_{false}; /* the worker's library read has not returned */
     std::atomic<bool> callbackFailed_{false};
-    std::atomic<bool> restarting_{false};  /* a rate change is restarting the read */
-    std::atomic<unsigned> generation_{0};  /* counts rate-change restarts */
-    unsigned readerGeneration_ = 0;        /* generation the reader's chunk belongs to */
+    std::atomic<bool> restarting_{false}; /* a rate change is restarting the read */
+    /* Held by readStream() for its whole call. A rate change takes it, so it
+     * swaps rates between reads and no read mixes two rates. Taken after the
+     * control lock and before mutex_.
+     */
+    std::mutex readerMutex_;
     std::mutex mutex_;
     std::condition_variable cond_;
     std::deque<std::vector<int16_t>> queue_; /* an empty chunk marks a gap */

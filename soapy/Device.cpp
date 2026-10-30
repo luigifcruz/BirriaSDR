@@ -18,6 +18,18 @@ static void check(int result, const char *what)
                                  std::to_string(result) + ")");
 }
 
+/* Test builds can pause a read between taking a chunk and copying it, and make
+ * a worker fail to start, to exercise the rate-change boundary. Other builds
+ * compile these to nothing.
+ */
+#ifdef SOAPY_BIRRIA_TEST_HOOKS
+void soapy_birria_read_hook();
+bool soapy_birria_fail_worker_start();
+#else
+static inline void soapy_birria_read_hook() {}
+static inline bool soapy_birria_fail_worker_start() { return false; }
+#endif
+
 /* Log an error as best effort. Logging can allocate, and it runs on failure
  * paths where an exception would terminate the process, so it never throws.
  */
@@ -252,15 +264,21 @@ void SoapyBirria::setSampleRate(const int, const size_t, const double rate)
     if (static_cast<uint32_t>(*native) == static_cast<uint32_t>(rate_))
         return;
     /* The library changes the rate only while idle, so a running stream stops,
-     * changes rate and restarts. Samples at the old rate are dropped, and the
-     * reader gets OVERFLOW at the change instead of a stream error.
+     * changes rate and restarts. Wake a waiting read so it returns, then take
+     * the reader lock, so the change falls between two reads. Samples at the
+     * old rate are dropped, and the next read returns OVERFLOW. If the read
+     * cannot restart, the stream stays active with no worker, so reads return
+     * STREAM_ERROR after the overflow.
      */
     const bool restart = running_;
+    std::unique_lock<std::mutex> reading(readerMutex_, std::defer_lock);
     if (restart) {
         {
             std::lock_guard<std::mutex> lock(mutex_);
             restarting_ = true;
         }
+        cond_.notify_all();
+        reading.lock();
         stopWorker();
     }
     if (report(birriasdr_set_sample_rate(dev_, static_cast<uint32_t>(*native)),
@@ -268,19 +286,19 @@ void SoapyBirria::setSampleRate(const int, const size_t, const double rate)
         rate_ = birriasdr_get_sample_rate(dev_);
     if (!restart)
         return;
+    current_.clear();
+    offset_ = 0;
     {
         std::lock_guard<std::mutex> lock(mutex_);
         queue_.clear();
         queued_ = 0;
-        ++generation_;
         markGap();
     }
-    const int started = startWorker();
+    if (startWorker() != 0)
+        logError("birria: cannot restart the stream after a rate change");
     {
         std::lock_guard<std::mutex> lock(mutex_);
         restarting_ = false;
-        if (started != 0)
-            active_ = false;
     }
     cond_.notify_all();
 }
@@ -423,6 +441,7 @@ int SoapyBirria::activateStream(SoapySDR::Stream *, const int flags, const long 
     std::unique_lock<std::shared_mutex> control(controlMutex_);
     if (running_)
         return 0;
+    std::lock_guard<std::mutex> reading(readerMutex_);
     current_.clear();
     offset_ = 0;
     {
@@ -448,6 +467,8 @@ int SoapyBirria::startWorker()
     callbackFailed_ = false;
     running_ = true;
     try {
+        if (soapy_birria_fail_worker_start())
+            throw std::runtime_error("injected worker start failure");
         worker_ = std::thread([this] {
             report(birriasdr_read_async(dev_, &SoapyBirria::asyncCallback, this, 0, 0),
                    "read_async");
@@ -517,26 +538,25 @@ int SoapyBirria::readStream(SoapySDR::Stream *, void *const *buffs, const size_t
         std::this_thread::sleep_until(deadline);
         return SOAPY_SDR_TIMEOUT;
     }
+    std::lock_guard<std::mutex> reading(readerMutex_);
     size_t count = 0;
     while (count < numElems) {
-        /* A rate change restarted the read: drop any chunk at the old rate. */
-        if (readerGeneration_ != generation_) {
-            readerGeneration_ = generation_;
-            current_.clear();
-            offset_ = 0;
+        /* A rate change is waiting for this read: return what was copied. */
+        if (restarting_) {
             if (count > 0)
                 break;
+            return SOAPY_SDR_TIMEOUT;
         }
         if (offset_ == current_.size() / 2) {
             std::unique_lock<std::mutex> lock(mutex_);
             if (queue_.empty()) {
                 if (count > 0)
                     break;
-                /* Keep waiting through a rate-change restart. */
-                if ((running_ || restarting_) &&
-                    !cond_.wait_until(lock, deadline, [this] {
-                        return !queue_.empty() || !(running_ || restarting_);
+                if (running_ && !cond_.wait_until(lock, deadline, [this] {
+                        return !queue_.empty() || !running_ || restarting_;
                     }))
+                    return SOAPY_SDR_TIMEOUT;
+                if (restarting_ && queue_.empty())
                     return SOAPY_SDR_TIMEOUT;
                 if (queue_.empty())
                     return active_ ? SOAPY_SDR_STREAM_ERROR : SOAPY_SDR_TIMEOUT;
@@ -552,6 +572,7 @@ int SoapyBirria::readStream(SoapySDR::Stream *, void *const *buffs, const size_t
             queued_ -= current_.size() / 2;
             offset_ = 0;
         }
+        soapy_birria_read_hook();
         const size_t n = std::min(current_.size() / 2 - offset_, numElems - count);
         const int16_t *in = &current_[2 * offset_];
         if (cs16_) {
