@@ -32,7 +32,8 @@
  * This is a nominal channel profile, not a brick-wall anti-alias filter. The
  * receive-only Wi-Fi comparison measured roughly 19-20 dB suppression at
  * +/-30 MHz and still decoded some aliased headers from strong signals there.
- * Each rate uses only the analog code that matches its span. Calibrated
+ * Each rate uses only the analog code that matches its span, except 10 MSps,
+ * which uses the 20 MHz analog code with a narrower digital filter. Calibrated
  * passband, stopband guarantees and arbitrary filter widths remain
  * unsupported; see docs/mt7921.md for the configuration and its limitations.
  *
@@ -181,7 +182,8 @@ static int filter_write(birriasdr_dev_t *dev, unsigned field, uint32_t value)
  * as the vendor firmware does. The 40 MHz profile never needed it. Clear both
  * bits first, so the pulse starts low even if a bit was left set, then set and
  * clear them, and check that both read back low. The high state is not read
- * back, because the hardware may clear the bit itself.
+ * back, because the hardware may clear the bit itself, so the pulse itself is
+ * not verified: a lost set write goes undetected.
  */
 static int latch_rate_class(birriasdr_dev_t *dev)
 {
