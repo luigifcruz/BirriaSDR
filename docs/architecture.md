@@ -21,6 +21,10 @@ and the [MT7921 device reference](mt7921.md).
 | `src/chips/mt7925.c` | Explicitly unimplemented backend with no register writes |
 | `firmware/iq_stream.S` | Complete original device program and its constants |
 | `tools/rebuild_firmware.py` | Optional rebuild and verification of the header from the assembly |
+| `tools/99-birriasdr.rules` | Linux udev rule that lets the `plugdev` group open both supported IDs |
+| `soapy/Registration.cpp` | SoapySDR enumeration from USB descriptors and registration of `driver=birria` |
+| `soapy/Device.cpp` | SoapySDR settings, the stream worker thread, gap reporting and conversion to `CS16` or `CF32` at native rates |
+| `soapy/tests/test_soapy_stream.cpp` | Explicit hardware capture through the module, not registered with CTest |
 
 The common reader consumes the event and mailbox protocol of our original
 firmware. Another backend can implement the same protocol on its own hardware.

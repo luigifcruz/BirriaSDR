@@ -114,9 +114,9 @@ int mt_status(birriasdr_dev_t *dev, uint32_t words[16])
  */
 static int validate(uint64_t frequency, uint32_t rate, const struct birriasdr_gain *gain)
 {
-    if (gain->lna > 3 || gain->lpf > 8 || gain->digital > 12)
+    if (gain->lna > 5 || gain->lpf > 8 || gain->digital > 12)
         return BIRRIASDR_ERROR_INVALID;
-    if (frequency < MT_RF_MIN_HZ || frequency > MT_RF_MAX_HZ || rate != 40000000)
+    if (!mt_frequency_supported(frequency) || rate != 40000000)
         return BIRRIASDR_ERROR_UNSUPPORTED;
     return 0;
 }
@@ -131,13 +131,18 @@ static int identify(birriasdr_dev_t *dev)
     return (chip & 0xffff) == 0x7961 ? 0 : BIRRIASDR_ERROR_UNSUPPORTED;
 }
 
+static const struct bs_band bands[] = {
+    {MT_RF_MIN_HZ, MT_RF_MAX_HZ}, {MT_RF_5G_MIN_HZ, MT_RF_5G_MAX_HZ}
+};
+
 const struct bs_backend bs_mt7921_backend = {
     .chipset = BIRRIASDR_CHIP_MT7921,
     .name = "MT7961/MT7972",
     .capabilities = BIRRIASDR_CAP_RX | BIRRIASDR_CAP_RAW_GAIN | BIRRIASDR_CAP_LIVE_GAIN |
                     BIRRIASDR_CAP_TUNING | BIRRIASDR_CAP_LIVE_TUNING,
     .default_frequency = MT_RF_ANCHOR_HZ,
-    .min_frequency = MT_RF_MIN_HZ, .max_frequency = MT_RF_MAX_HZ,
+    .min_frequency = MT_RF_MIN_HZ, .max_frequency = MT_RF_5G_MAX_HZ,
+    .bands = bands, .band_count = sizeof(bands) / sizeof(bands[0]),
     .default_rate = 40000000,
     .validate = validate,
     .identify = identify,
