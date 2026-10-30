@@ -27,7 +27,8 @@ static int test_options(void)
     char *configured[] = {
         (char *)"birria_udp", (char *)"--host", (char *)"192.0.2.1",
         (char *)"--port", (char *)"4321", (char *)"--frequency",
-        (char *)"2437000000", (char *)"--device", (char *)"2",
+        (char *)"2437000000", (char *)"--rate", (char *)"10000000",
+        (char *)"--device", (char *)"2",
         (char *)"--packet-samples", (char *)"4096", (char *)"--recovery",
         (char *)"0", (char *)"--manual"
     };
@@ -42,6 +43,7 @@ static int test_options(void)
     CHECK(options.device_index == 0);
     CHECK(options.packet_samples == DEFAULT_PACKET_SAMPLES);
     CHECK(options.recovery_restarts == DEFAULT_RECOVERY_RESTARTS);
+    CHECK(options.rate == 0);
     CHECK(!options.manual_gain);
 
     CHECK(parse_options((int)(sizeof(configured) / sizeof(configured[0])),
@@ -49,6 +51,7 @@ static int test_options(void)
     CHECK(!strcmp(options.host, "192.0.2.1"));
     CHECK(!strcmp(options.port, "4321"));
     CHECK(options.frequency == UINT64_C(2437000000));
+    CHECK(options.rate == 10000000);
     CHECK(options.device_index == 2);
     CHECK(options.packet_samples == 4096);
     CHECK(options.recovery_restarts == 0);

@@ -40,6 +40,17 @@ int birriasdr_close(birriasdr_dev_t *dev)
     atomic_fetch_add(&stub_closes, 1);
     return 0;
 }
+int birriasdr_set_sample_rate(birriasdr_dev_t *dev, uint32_t rate)
+{
+    (void)dev;
+    (void)rate;
+    return 0;
+}
+uint32_t birriasdr_get_sample_rate(const birriasdr_dev_t *dev)
+{
+    (void)dev;
+    return 40000000;
+}
 int birriasdr_set_center_freq(birriasdr_dev_t *dev, uint64_t frequency)
 {
     (void)dev;

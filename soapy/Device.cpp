@@ -231,7 +231,7 @@ SoapySDR::RangeList SoapyBirria::getFrequencyRange(const int, const size_t,
 /* Rates the hardware produces without resampling. The library cannot list its
  * rates, so add one here when the backend gains it.
  */
-static const double kNativeRates[] = {40e6};
+static const double kNativeRates[] = {10e6, 20e6, 40e6, 80e6};
 
 /* Accept only a native rate and pass it to the library. The library requires
  * this setter to run alone on the handle, so it holds the control lock

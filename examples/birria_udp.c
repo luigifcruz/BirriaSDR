@@ -50,6 +50,7 @@ struct options {
     const char *host;
     const char *port;
     uint64_t frequency;
+    uint32_t rate;
     uint32_t device_index;
     uint32_t packet_samples;
     uint32_t recovery_restarts;
@@ -64,6 +65,7 @@ static void usage(FILE *file, const char *program)
             "  --host HOST             UDP destination (default " DEFAULT_HOST ")\n"
             "  --port PORT             UDP destination port (default " DEFAULT_PORT ")\n"
             "  --frequency HZ          Center frequency for the receiver\n"
+            "  --rate SPS              Sample rate, 10, 20, 40 or 80 million (default 40000000)\n"
             "  --device INDEX          Device index (default 0)\n"
             "  --packet-samples COUNT  Complex samples per datagram (default 2048, max 16376)\n"
             "  --recovery COUNT        Full stream restart budget (default 3, 0 disables)\n"
@@ -131,6 +133,13 @@ static int parse_options(int argc, char **argv, struct options *options)
             if (take_value(argc, argv, &i, &value) ||
                 parse_u64(value, UINT64_MAX, false, &options->frequency))
                 return -1;
+            continue;
+        }
+        if (!strcmp(argv[i], "--rate")) {
+            if (take_value(argc, argv, &i, &value) ||
+                parse_u64(value, UINT32_MAX, false, &number))
+                return -1;
+            options->rate = (uint32_t)number;
             continue;
         }
         if (!strcmp(argv[i], "--device")) {
@@ -359,7 +368,12 @@ int main(int argc, char **argv)
     }
     stream.dev = dev;
 
-    if (options.frequency) {
+    if (options.rate) {
+        result = birriasdr_set_sample_rate(dev, options.rate);
+        if (result < 0)
+            fprintf(stderr, "Rate: %s\n", birriasdr_strerror(result));
+    }
+    if (!result && options.frequency) {
         result = birriasdr_set_center_freq(dev, options.frequency);
         if (result < 0)
             fprintf(stderr, "Frequency: %s\n", birriasdr_strerror(result));
@@ -395,8 +409,10 @@ int main(int argc, char **argv)
     }
     if (streaming) {
         fprintf(stderr,
-                "Sending 40 MSps CS16 to %s:%s in packets of %u samples. Press Ctrl-C to stop.\n",
-                options.host, options.port, options.packet_samples);
+                "Sending %" PRIu32 " MSps CS16 to %s:%s in packets of %u samples."
+                " Press Ctrl-C to stop.\n",
+                birriasdr_get_sample_rate(dev) / 1000000u, options.host, options.port,
+                options.packet_samples);
         result = birriasdr_read_async(dev, send_samples, &stream, 0, 0);
         atomic_store(&watch.done, true);
         pthread_join(watcher, NULL);
