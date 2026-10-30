@@ -1,9 +1,8 @@
 /* SPDX-License-Identifier: MIT
- * Copyright (c) 2026 Luigi C.
+ * Copyright (c) 2026 The BirriaSDR Authors
  * Stream raw little-endian CS16 I/Q datagrams to SDR++ Network Source.
  */
 #include "birriasdr.h"
-
 #include <errno.h>
 #include <fcntl.h>
 #include <inttypes.h>
@@ -48,6 +47,7 @@ struct options {
     bool manual_gain;
 };
 
+/* Print the option summary. Help goes to stdout and usage errors to stderr. */
 static void usage(FILE *file, const char *program)
 {
     fprintf(file,
@@ -79,6 +79,7 @@ static int parse_u64(const char *text, uint64_t maximum, bool allow_zero, uint64
     return 0;
 }
 
+/* Take the value that follows an option, failing when the option is last. */
 static int take_value(int argc, char **argv, int *argument, const char **value)
 {
     if (*argument + 1 >= argc)
@@ -87,6 +88,7 @@ static int take_value(int argc, char **argv, int *argument, const char **value)
     return 0;
 }
 
+/* Fill options from the command line. Returns 1 for help and -1 for a usage error. */
 static int parse_options(int argc, char **argv, struct options *options)
 {
     const char *value;
@@ -193,12 +195,16 @@ static int open_udp_sender(const char *host, const char *port)
     return fd;
 }
 
+/* Errors that lose one datagram but leave the socket usable for the next. */
 static bool droppable_socket_error(int error)
 {
     return error == EINTR || error == EAGAIN || error == EWOULDBLOCK || error == ENOBUFS ||
            error == ECONNREFUSED || error == EHOSTUNREACH || error == ENETUNREACH;
 }
 
+/* Send one datagram of little-endian samples. A droppable error counts the
+ * datagram as dropped. Any other error, or a short send, fails the stream.
+ */
 static int send_datagram(struct udp_stream *stream, const int16_t *iq, uint32_t count)
 {
     size_t length = (size_t)count * 2u * sizeof(*iq);
@@ -251,6 +257,7 @@ static void send_samples(const int16_t *iq, uint32_t count, uint64_t first, void
         (void)birriasdr_cancel_async(stream->dev);
 }
 
+/* Report each library gap, and keep cancelling once the user has interrupted. */
 static void on_recovery(const struct birriasdr_recovery_event *event, void *context)
 {
     struct udp_stream *stream = context;
@@ -263,12 +270,16 @@ static void on_recovery(const struct birriasdr_recovery_event *event, void *cont
         (void)birriasdr_cancel_async(stream->dev);
 }
 
+/* Signal handlers only set a flag; library cancellation runs in normal context. */
 static void on_signal(int signal_number)
 {
     (void)signal_number;
     interrupted = 1;
 }
 
+/* Open the device, apply the options and stream until Ctrl-C or an error, then
+ * print the counters. A nonzero exit status means the stream did not end cleanly.
+ */
 int main(int argc, char **argv)
 {
     struct options options;

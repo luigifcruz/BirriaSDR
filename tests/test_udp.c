@@ -1,4 +1,11 @@
-/* SPDX-License-Identifier: MIT */
+/* SPDX-License-Identifier: MIT
+ * Copyright (c) 2026 The BirriaSDR Authors
+ */
+
+/* Test the birria_udp option parsing and packetization without hardware. The
+ * example is included directly, with its main renamed, so its static functions
+ * can be called.
+ */
 #include <sys/time.h>
 
 #define main birria_udp_program_main
@@ -12,6 +19,7 @@
     } \
 } while (0)
 
+/* Check defaults, every option and the rejection of out-of-range values. */
 static int test_options(void)
 {
     struct options options;
@@ -51,6 +59,7 @@ static int test_options(void)
     return 0;
 }
 
+/* Check datagram boundaries and little-endian bytes over a local socket pair. */
 static int test_datagrams(void)
 {
     static const int16_t samples[] = {
