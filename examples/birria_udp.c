@@ -324,6 +324,7 @@ int main(int argc, char **argv)
     struct udp_stream stream = {.socket_fd = -1};
     struct interrupt_watch watch;
     pthread_t watcher;
+    bool streaming = false;
     uint64_t unsent;
     struct birriasdr_stream_stats stats = {0};
     birriasdr_dev_t *dev = NULL;
@@ -340,6 +341,11 @@ int main(int argc, char **argv)
         return 2;
     }
 
+    /* Install the handlers before setup, so Ctrl-C while the device opens leads
+     * to a clean close instead of killing the process mid-boot.
+     */
+    signal(SIGINT, on_signal);
+    signal(SIGTERM, on_signal);
     stream.socket_fd = open_udp_sender(options.host, options.port);
     if (stream.socket_fd < 0)
         return 1;
@@ -373,9 +379,8 @@ int main(int argc, char **argv)
             fprintf(stderr, "Recovery: %s\n", birriasdr_strerror(result));
     }
 
-    signal(SIGINT, on_signal);
-    signal(SIGTERM, on_signal);
-    if (!result) {
+    /* Ctrl-C during setup skips the stream; the device still closes cleanly. */
+    if (!result && !atomic_load(&interrupted)) {
         watch.dev = dev;
         atomic_init(&watch.done, false);
         if (pthread_create(&watcher, NULL, watch_interrupt, &watch)) {
@@ -384,9 +389,11 @@ int main(int argc, char **argv)
              */
             fprintf(stderr, "Interrupt watcher: cannot start a thread\n");
             result = BIRRIASDR_ERROR_NO_MEMORY;
+        } else {
+            streaming = true;
         }
     }
-    if (!result) {
+    if (streaming) {
         fprintf(stderr,
                 "Sending 40 MSps CS16 to %s:%s in packets of %u samples. Press Ctrl-C to stop.\n",
                 options.host, options.port, options.packet_samples);

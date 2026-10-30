@@ -144,7 +144,8 @@ local kernel accepts them because the raw stream has no acknowledgements or
 sequence numbers. The receiving application cannot identify the missing sample
 count either.
 
-Press Ctrl-C to stop, even while the device is still starting. The program
+Press Ctrl-C to stop at any time. During setup, the program finishes opening
+the device, then closes it without streaming. Once streaming, the program
 cancels the read, drains device packets that are already in flight, sends the
 last partial datagram, closes the socket and device, then prints sample,
 datagram, recovery and hardware status counters. The unsent count shows samples
