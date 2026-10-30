@@ -5,13 +5,14 @@
 /*
  * MT7961/MT7972 matched receive bandwidth at 10, 20, 40 or 80 MSps
  *
- * At 80 MSps the profile follows the vendor's 80 MHz channel setup (also used
- * by Mtk79ICAP): analog code 2, per-chain 0xb00/0xb04 fields, digital class 2
+ * At 80 MSps the profile follows the vendor firmware's 80 MHz channel setup:
+ * analog code 2, per-chain 0xb00/0xb04 fields, digital class 2
  * latched by a pulse of 0x8300c008/0x8301c008[31], and on 2.4 GHz
  * 0x830a0080[7:4] = 6. Without them the 80 MSps tap repeats 40 MSps samples.
  * At 20 MSps it is the vendor's 20 MHz setup (codes 0, 0x83080000[12] set);
  * the capture packer then keeps one 80 MSps tap sample in four, so this filter
  * is what keeps the wider span from aliasing into the 20 MHz output.
+ * At 10 MSps it is the 20 MHz setup plus a narrower digital filter.
  * The description below is the 40 MSps profile.
  *
  * The analog filter and the digital PHY bandwidth are independent controls.
@@ -31,11 +32,11 @@
  * This is a nominal channel profile, not a brick-wall anti-alias filter. The
  * receive-only Wi-Fi comparison measured roughly 19-20 dB suppression at
  * +/-30 MHz and still decoded some aliased headers from strong signals there.
- * The wider analog codes admit more out-of-span energy and are research-only.
- * Calibrated passband, stopband guarantees and arbitrary filter widths remain
+ * Each rate uses only the analog code that matches its span. Calibrated
+ * passband, stopband guarantees and arbitrary filter widths remain
  * unsupported; see docs/mt7921.md for the configuration and its limitations.
  *
- * Save all four baseline fields before the first write. Preserve unrelated
+ * Save every field the rate owns before the first write. Preserve unrelated
  * bits, verify each application, and restore every field on partial failure.
  * Analog state can survive WFSYS reset, so normal reset restores this baseline
  * too. A failed restoration keeps the saved state for retry. Every automatic
@@ -44,8 +45,8 @@
 #include "mt7921.h"
 #include <string.h>
 
-/* Per-rate values from the vendor firmware's channel setup (FUN_0093dbd4,
- * FUN_0093ca3e; tabulated in upstream issue #1). Fields 0-3 alone are the
+/* Per-rate values from the vendor firmware's channel setup, tabulated in this
+ * project's issue #1. Fields 0-3 alone are the
  * 40 MHz profile. 20 and 80 MHz add the per-chain analog words 0xb00/0xb04
  * and 0x830a0080[7:4]: the 2.4 GHz channel number at 20 MHz, 6 at 80 MHz.
  * 0x83080000[12] is set only at 20 MHz. RF fields name their physical SPI
@@ -74,7 +75,7 @@ static const struct filter_field {
 
 /* The fields one rate owns, as a bit mask over fields[]. 10 MSps is the 20 MHz
  * profile plus 0x83081000/0x83091000[30:28] = 7, one of two extra codes in the
- * vendor's bandwidth setup (FUN_0093dbd4). Measured, it narrows the digital
+ * vendor firmware's bandwidth setup. Measured, it narrows the digital
  * filter to about 10 MHz: energy from just outside the 10 MHz span drops
  * about 20 dB instead of folding in at full strength.
  */
@@ -137,7 +138,7 @@ static int filter_write(birriasdr_dev_t *dev, unsigned field, uint32_t value)
 }
 
 /* The digital rate class takes effect on a pulse of 0x8300c008/0x8301c008[31],
- * as the vendor firmware and Mtk79ICAP do. The 40 MHz profile never needed it.
+ * as the vendor firmware does. The 40 MHz profile never needed it.
  */
 static int latch_rate_class(birriasdr_dev_t *dev)
 {

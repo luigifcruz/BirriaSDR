@@ -12,15 +12,16 @@
  * This module selects the capture tap and clocks; mt7921_rf.c makes that tap
  * receive an external signal. Tap 4 is selected in 0x830ad448[11:8] and uses
  * logical chain 0 (physical RF SPI 1). This is not an antenna-switch control.
- * The backend uses the channel-6 anchor at 40 MSps complex and exposes an
- * low-band retuning interval without changing the capture clocks.
+ * The backend captures 10, 20, 40 or 80 MSps complex. Retuning does not change
+ * the capture clocks.
  *
  * ICAP control is 0x80021090, its start/end offsets are 0x80021098/0x8002109c,
  * and its producer pointer is 0x800210b4. The 256 KiB ring at byte address
- * 0xe0200000 holds 65,536 complex samples: only 1.6384 ms at 40 MSps. Samples
- * occupy four bytes each, little-endian Q then I in 16-bit slots with 14 valid
- * bits per component. Four consecutive complex samples fill 16 bytes without
- * inter-sample padding. Address units must not be confused with byte offsets.
+ * 0xe0200000 holds 256 KiB: only 1.6384 ms at 20 and 40 MSps. Samples occupy
+ * four bytes each, little-endian Q then I in 16-bit slots with 14 valid bits
+ * per component. At 40 and 80 MSps, four consecutive complex samples fill 16
+ * bytes without inter-sample padding. At 10 and 20 MSps, each 16-byte record
+ * holds two samples and two zero words. Address units must not be confused with byte offsets.
  *
  * mt_configure_capture() leaves ICAP stopped (control 0x4f1). The original
  * MCU program waits for GO, starts ICAP with 0x24f3, watches the producer and
@@ -74,17 +75,19 @@ int mt_configure_capture(birriasdr_dev_t *dev)
     BS_TRY(bs_write32(dev, BS_MMIO, 0x80021090, 0xf1));
     BS_TRY(bs_write32(dev, BS_MMIO, 0x80021098, 0));
     BS_TRY(bs_write32(dev, BS_MMIO, 0x8002109c, 0xfffc));
-    /* Bit 17 packs the tap into 16-byte records of two samples and two zero
-     * words, one record per four tap samples: 80 MSps in gives 20 MSps at
-     * 160 MB/s, 40 MSps in gives 10 MSps at 80 MB/s. The other rates use the
-     * dense format with all bits clear.
+    /* Bit 17 enables the packer, which keeps one tap sample in four and writes
+     * each pair of kept samples, followed by two zero words, as a 16-byte
+     * record. One record therefore covers eight tap samples: the 80 MSps tap
+     * gives 20 MSps at 160 MB/s and the 40 MSps tap gives 10 MSps at 80 MB/s.
+     * The measured sample counts and USB rates confirm this. The other rates
+     * use the dense format with all bits clear.
      */
     BS_TRY(bs_update32(dev, BS_MMIO, 0x800210b8, 0xf0000,
                         dev->rate <= 20000000 ? 0x9c020000 : 0x9c000000));
     BS_TRY(bs_update32(dev, BS_MMIO, 0x830ad440, 0xff, 0x80000013));
     /* Bits 19:18 select the tap rate, 40 MSps << (3 - m): 3 for 40 MSps, 2 for
      * 80 MSps. 20 and 10 MSps use the 80 and 40 MSps taps with the packer
-     * below, which keeps one sample in four. Tap 4 (bits 11:8) is unchanged.
+     * above, which keeps one sample in four. Tap 4 (bits 11:8) is unchanged.
      */
     BS_TRY(bs_update32(dev, BS_MMIO, 0x830ad448, 0x0fffffff,
                         dev->rate == 40000000 || dev->rate == 10000000 ? 0x008c0400 : 0x00880400));
