@@ -159,8 +159,9 @@ sudo udevadm control --reload-rules && sudo udevadm trigger
 
 The `birria_udp` example sends the samples as raw little-endian CS16 UDP
 datagrams, which any application that reads raw I/Q from a UDP port can
-receive. The stream carries 160 MB/s, so it goes to the local host by default. The [UDP sender guide](docs/udp.md) covers
-setup, every option, the stream format and troubleshooting.
+receive. The stream carries 160 MB/s, so it goes to the local host by default.
+The [UDP sender guide](docs/udp.md) covers setup, every option, the stream
+format and troubleshooting.
 
 ### SoapySDR module
 

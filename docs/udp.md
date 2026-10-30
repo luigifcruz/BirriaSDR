@@ -55,7 +55,7 @@ Run the help command to see the accepted options:
 | --- | --- | --- |
 | `--host HOST` | `127.0.0.1` | Selects the UDP destination address |
 | `--port PORT` | `1234` | Selects a destination port from 1 to 65,535 |
-| `--frequency HZ` | Device default | Selects the receiver center frequency in whole hertz |
+| `--frequency HZ` | Device default | Selects the receiver center frequency in whole hertz, within the bands listed in the README [specifications](../README.md#specifications). Another value fails with `UNSUPPORTED` |
 | `--device INDEX` | `0` | Selects a device from the `birria_rx --list` output |
 | `--packet-samples COUNT` | `2048` | Selects 1 to 16,376 complex samples per datagram |
 | `--recovery COUNT` | `3` | Selects the bounded full restart budget, and zero disables recovery |
@@ -92,6 +92,7 @@ The following command sends to another host and disables automatic recovery:
 | Sample layout | Interleaved signed 16-bit I, Q pairs |
 | Source range | −8192 to 8191 for each unshifted 14-bit component |
 | Byte order | Little-endian |
+| Datagram size | Exactly the `--packet-samples` count, except the last datagram before a gap or at shutdown, which can be shorter |
 | Default payload | 2,048 complex samples, 8,192 bytes |
 | Maximum payload | 16,376 complex samples, 65,504 bytes |
 | Metadata | None |
@@ -130,20 +131,25 @@ from an application, use the [SoapySDR module](soapy.md) instead.
 ## Recovery, loss and shutdown
 
 The sender enables library recovery with a budget of three full restarts by
-default. A recovery event prints a stream gap message before resumed samples.
-Clean source overruns can also report gaps without consuming the bounded restart
-budget.
+default. Before each gap the sender sends its partial datagram, so no datagram
+spans a gap, and then prints a stream gap message. Clean source overruns can
+also report gaps without consuming the bounded restart budget.
 
 The UDP socket is nonblocking so a slow or absent receiver does not hold the
-library callback indefinitely. The sender counts datagrams rejected by its local
-socket as dropped. It cannot detect datagrams lost after the local kernel
-accepts them because the raw stream has no acknowledgements or sequence numbers.
-The receiving application cannot identify the missing sample count either.
+library callback indefinitely. The sender counts a datagram as dropped when its
+local socket is full or the receiver is not listening yet, and it keeps
+streaming. Any other send error, such as a lost route to the destination, stops
+the stream with an error. The sender cannot detect datagrams lost after the
+local kernel accepts them because the raw stream has no acknowledgements or
+sequence numbers. The receiving application cannot identify the missing sample
+count either.
 
-Press Ctrl-C to stop. The program cancels the read, drains device packets that
-are already in flight, closes the socket and device, then prints sample,
-datagram, recovery and hardware status counters. A nonzero exit status means
-capture, network submission or cleanup reported an error.
+Press Ctrl-C to stop, even while the device is still starting. The program
+cancels the read, drains device packets that are already in flight, sends the
+last partial datagram, closes the socket and device, then prints sample,
+datagram, recovery and hardware status counters. The unsent count shows samples
+lost when a send error stopped the stream. A nonzero exit status means capture,
+network submission or cleanup reported an error.
 
 ## Troubleshooting
 

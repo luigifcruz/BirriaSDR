@@ -7,13 +7,16 @@
 #include <fcntl.h>
 #include <inttypes.h>
 #include <netdb.h>
+#include <pthread.h>
 #include <signal.h>
+#include <stdatomic.h>
 #include <stdbool.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <time.h>
 #include <unistd.h>
 
 #define DEFAULT_HOST "127.0.0.1"
@@ -28,6 +31,8 @@ struct udp_stream {
     birriasdr_dev_t *dev;
     int socket_fd;
     uint32_t packet_samples;
+    uint32_t pending_samples;                 /* samples waiting in pending */
+    uint8_t pending[MAX_PACKET_SAMPLES * 4u]; /* little-endian datagram being filled */
     uint64_t samples_seen;
     uint64_t samples_sent;
     uint64_t datagrams_sent;
@@ -195,31 +200,29 @@ static int open_udp_sender(const char *host, const char *port)
     return fd;
 }
 
-/* Errors that lose one datagram but leave the socket usable for the next. */
+/* Errors that lose one datagram but leave the socket usable for the next: a
+ * full buffer, or a receiver that is not listening yet. A lost route to the
+ * destination is not one of them, because no later datagram would arrive.
+ */
 static bool droppable_socket_error(int error)
 {
     return error == EINTR || error == EAGAIN || error == EWOULDBLOCK || error == ENOBUFS ||
-           error == ECONNREFUSED || error == EHOSTUNREACH || error == ENETUNREACH;
+           error == ECONNREFUSED;
 }
 
-/* Send one datagram of little-endian samples. A droppable error counts the
- * datagram as dropped. Any other error, or a short send, fails the stream.
+/* Send the pending datagram, if any. A droppable error counts it as dropped.
+ * Any other error, or a short send, fails the stream.
  */
-static int send_datagram(struct udp_stream *stream, const int16_t *iq, uint32_t count)
+static int send_pending(struct udp_stream *stream)
 {
-    size_t length = (size_t)count * 2u * sizeof(*iq);
-    const void *data = iq;
-#if defined(__BYTE_ORDER__) && __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
-    uint8_t little_endian[MAX_PACKET_SAMPLES * 4u];
-    for (uint32_t i = 0; i < count * 2u; ++i) {
-        uint16_t value = (uint16_t)iq[i];
-        little_endian[2u * i] = (uint8_t)value;
-        little_endian[2u * i + 1u] = (uint8_t)(value >> 8);
-    }
-    data = little_endian;
-#endif
+    uint32_t count = stream->pending_samples;
+    size_t length = (size_t)count * 4u;
+    ssize_t sent;
 
-    ssize_t sent = send(stream->socket_fd, data, length, 0);
+    if (!count)
+        return 0;
+    stream->pending_samples = 0;
+    sent = send(stream->socket_fd, stream->pending, length, 0);
     if (sent == (ssize_t)length) {
         stream->samples_sent += count;
         stream->datagrams_sent++;
@@ -237,31 +240,40 @@ static int send_datagram(struct udp_stream *stream, const int16_t *iq, uint32_t 
     return -1;
 }
 
-/* Datagram boundaries carry no metadata. Receivers treat each payload as raw CS16. */
+/* Encode samples as little-endian I,Q into datagrams of exactly packet_samples,
+ * carrying a partial datagram over to the next callback. Datagram boundaries
+ * carry no metadata. Receivers treat each payload as raw CS16.
+ */
 static void send_samples(const int16_t *iq, uint32_t count, uint64_t first, void *context)
 {
     struct udp_stream *stream = context;
-    uint32_t done = 0;
 
     (void)first;
     stream->samples_seen += count;
-    while (done < count && !stream->error) {
-        uint32_t chunk = count - done;
-        if (chunk > stream->packet_samples)
-            chunk = stream->packet_samples;
-        if (send_datagram(stream, iq + (size_t)done * 2u, chunk))
+    for (uint32_t i = 0; i < count && !stream->error; ++i) {
+        uint8_t *bytes = stream->pending + (size_t)stream->pending_samples * 4u;
+        uint16_t in_phase = (uint16_t)iq[2u * i];
+        uint16_t quadrature = (uint16_t)iq[2u * i + 1u];
+        bytes[0] = (uint8_t)in_phase;
+        bytes[1] = (uint8_t)(in_phase >> 8);
+        bytes[2] = (uint8_t)quadrature;
+        bytes[3] = (uint8_t)(quadrature >> 8);
+        if (++stream->pending_samples == stream->packet_samples && send_pending(stream))
             stream->error = 1;
-        done += chunk;
     }
     if (interrupted || stream->error)
         (void)birriasdr_cancel_async(stream->dev);
 }
 
-/* Report each library gap, and keep cancelling once the user has interrupted. */
+/* Flush the partial datagram so none spans the gap, then report the gap. */
 static void on_recovery(const struct birriasdr_recovery_event *event, void *context)
 {
     struct udp_stream *stream = context;
 
+    if (!stream->error && send_pending(stream))
+        stream->error = 1;
+    if (stream->error)
+        (void)birriasdr_cancel_async(stream->dev);
     stream->gaps++;
     fprintf(stderr, "Stream gap before delivered sample %" PRIu64
                     ", attempt %u: %s\n",
@@ -277,6 +289,28 @@ static void on_signal(int signal_number)
     interrupted = 1;
 }
 
+struct interrupt_watch {
+    birriasdr_dev_t *dev;
+    atomic_bool done;
+};
+
+/* Cancel from a normal thread once the user interrupts, so Ctrl-C works even
+ * before the first callback. Cancellation before the read starts returns STATE,
+ * and repeating it is harmless, so retry until the read has returned.
+ */
+static void *watch_interrupt(void *context)
+{
+    struct interrupt_watch *watch = context;
+    const struct timespec period = {.tv_nsec = 50000000};
+
+    while (!atomic_load(&watch->done)) {
+        if (interrupted)
+            (void)birriasdr_cancel_async(watch->dev);
+        nanosleep(&period, NULL);
+    }
+    return NULL;
+}
+
 /* Open the device, apply the options and stream until Ctrl-C or an error, then
  * print the counters. A nonzero exit status means the stream did not end cleanly.
  */
@@ -284,6 +318,10 @@ int main(int argc, char **argv)
 {
     struct options options;
     struct udp_stream stream = {.socket_fd = -1};
+    struct interrupt_watch watch;
+    pthread_t watcher;
+    bool watching = false;
+    uint64_t unsent;
     struct birriasdr_stream_stats stats = {0};
     birriasdr_dev_t *dev = NULL;
     int result;
@@ -335,10 +373,22 @@ int main(int argc, char **argv)
     signal(SIGINT, on_signal);
     signal(SIGTERM, on_signal);
     if (!result) {
+        watch.dev = dev;
+        atomic_init(&watch.done, false);
+        watching = !pthread_create(&watcher, NULL, watch_interrupt, &watch);
+        if (!watching)
+            fprintf(stderr, "Ctrl-C will take effect at the next callback\n");
         fprintf(stderr,
                 "Sending 40 MSps CS16 to %s:%s in packets of %u samples. Press Ctrl-C to stop.\n",
                 options.host, options.port, options.packet_samples);
         result = birriasdr_read_async(dev, send_samples, &stream, 0, 0);
+        if (watching) {
+            atomic_store(&watch.done, true);
+            pthread_join(watcher, NULL);
+        }
+        /* Callbacks have finished, so the last partial datagram is safe to send. */
+        if (!stream.error && send_pending(&stream))
+            stream.error = 1;
     }
 
     if (birriasdr_get_stream_stats(dev, &stats) < 0)
@@ -346,12 +396,14 @@ int main(int argc, char **argv)
     close_result = birriasdr_close(dev);
     close(stream.socket_fd);
 
+    /* Samples seen but neither sent nor dropped were lost to a send error. */
+    unsent = stream.samples_seen - stream.samples_sent - stream.samples_dropped;
     fprintf(stderr,
             "Saw %" PRIu64 " samples, sent %" PRIu64 " in %" PRIu64
-            " datagrams, dropped %" PRIu64 " in %" PRIu64
-            " datagrams, gaps=%u; stream=%s; firmware state=%u; stage=%d; reset=%s\n",
+            " datagrams, dropped %" PRIu64 " in %" PRIu64 " datagrams, unsent %" PRIu64
+            ", gaps=%u; stream=%s; firmware state=%u; stage=%d; reset=%s\n",
             stream.samples_seen, stream.samples_sent, stream.datagrams_sent,
-            stream.samples_dropped, stream.datagrams_dropped, stream.gaps,
+            stream.samples_dropped, stream.datagrams_dropped, unsent, stream.gaps,
             birriasdr_strerror(result), stats.firmware_state, stats.stage,
             birriasdr_strerror(stats.reset_error));
     return result || close_result || stream.error ? 1 : 0;
