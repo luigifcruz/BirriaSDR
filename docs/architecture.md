@@ -148,25 +148,27 @@ acquisitions.
 ## Tests and firmware
 
 Normal CTest tests need neither hardware nor privileges. The RF trace fixture
-was generated independently from the working Python prototype with
-deterministic readbacks, not from the C code under test. Each of its 300 writes
-must match, in order. The fixture covers the original bootstrap but not the
-later matched-filter setup. A separate four-register model checks that setup's
-analog and digital masks, preservation of unrelated bits, readback, failure at
-every I/O boundary and retry after a failed rollback. The current offline suite
-contains twelve CTest cases. The UDP packetizer test checks the `birria_udp`
-option parsing, datagram boundaries across callbacks and gaps, little-endian
-encoding, dropped datagrams and send failures over a local socket pair, without
-hardware. The UDP interrupt test runs the program against a stub library whose
-read never delivers a sample. It checks that Ctrl-C still stops the read
-cleanly, and that a Ctrl-C sent while the device opens closes the device
-without starting one.
-Additional fault tests cover standby readback failure, a wrong die, gain
-rollback and repeated gain restoration. The live-control tests
-exercise concurrent setters, coherent settings readback, startup gates and
-failure-triggered cancellation. The gain register model also checks
-manual-to-manual rollback and repeated release and force cycles against the
-original unforced baseline.
+was generated independently from the working Python prototype with deterministic
+readbacks, not from the C code under test. Each of its 300 writes must match, in
+order. The fixture covers the original bootstrap but not the later
+matched-filter setup. A separate register model checks that setup's analog and
+digital masks, preservation of unrelated bits, readback, failure at every I/O
+boundary and retry after a failed rollback. At 40 MSps it allows only the
+original four registers. At 10, 20 and 80 MSps it also checks the per-chain,
+channel and mode fields against values written out from the documented layout,
+the rate class latch pulses and the nearest-channel mapping. The current offline
+suite contains twelve CTest cases. The UDP packetizer test checks the
+`birria_udp` option parsing, datagram boundaries across callbacks and gaps,
+little-endian encoding, dropped datagrams and send failures over a local socket
+pair, without hardware. The UDP interrupt test runs the program against a stub
+library whose read never delivers a sample. It checks that Ctrl-C still stops
+the read cleanly, and that a Ctrl-C sent while the device opens closes the
+device without starting one. Additional fault tests cover standby readback
+failure, a wrong die, gain rollback and repeated gain restoration. The
+live-control tests exercise concurrent setters, coherent settings readback,
+startup gates and failure-triggered cancellation. The gain register model also
+checks manual-to-manual rollback and repeated release and force cycles against
+the original unforced baseline.
 
 The tuning tests check exact divider words, fractional carry, arithmetic bounds
 and quantization error. By default, tuning uses all 20 fractional bits. The
@@ -178,26 +180,27 @@ requests. These tests establish software behavior, not additional physical
 tuning coverage.
 
 The stream lifecycle test drives the public read engine with a simulated
-transport and backend. It injects failures during allocation, preparation,
-submission, start, stop, status, reset and live gain or tuning, then verifies
-that the same handle can capture again. Terminal source faults are checked
-before waiting for submitted packets that may never arrive. The transfer
-ownership test also covers disconnects, queue overflow and partial allocation or
-submission. On Linux, builds inject each reader allocation failure through
-linker wrappers. The tuning arithmetic test round-trips every encoded word
-across the command interval. These tests make no claim about reception between
-measured frequencies. The recovery cases also check restart budgets,
-cancellation inside the gap callback, failed rollback, fatal errors, stale
-handles and preservation of the original control error when STOP also fails.
-Separate tests exercise the real boot retry logic with a mocked transport, and
-terminal packet accounting across the firmware's 32-bit counter wrap without
-waiting for a multi-day capture. Gap tests cover fragmented markers, stale
-nonces, counter wrap, malformed events, and rejection by strict readers. Stream
-tests feed deliberately corrupted final packets before markers and verify their
-discard, callback boundaries, cancellation, and multiple gaps without another
-boot or reader. Queue tests cover parked-transfer ordering, teardown and failed
-resubmission. Mixed-fault tests keep the bounded retry budget separate from
-clean overruns.
+transport and backend, at all four sample rates. At 10 and 20 MSps it delivers
+packed payloads, with half as many samples per packet. It injects failures
+during allocation, preparation, submission, start, stop, status, reset and live
+gain or tuning, then verifies that the same handle can capture again. Terminal
+source faults are checked before waiting for submitted packets that may never
+arrive. The transfer ownership test also covers disconnects, queue overflow and
+partial allocation or submission. On Linux, builds inject each reader allocation
+failure through linker wrappers. The tuning arithmetic test round-trips every
+encoded word across the command interval. These tests make no claim about
+reception between measured frequencies. The recovery cases also check restart
+budgets, cancellation inside the gap callback, failed rollback, fatal errors,
+stale handles and preservation of the original control error when STOP also
+fails. Separate tests exercise the real boot retry logic with a mocked
+transport, and terminal packet accounting across the firmware's 32-bit counter
+wrap without waiting for a multi-day capture. Gap tests cover fragmented
+markers, stale nonces, counter wrap, malformed events, and rejection by strict
+readers. Stream tests feed deliberately corrupted final packets before markers
+and verify their discard, callback boundaries, cancellation, and multiple gaps
+without another boot or reader. Queue tests cover parked-transfer ordering,
+teardown and failed resubmission. Mixed-fault tests keep the bounded retry
+budget separate from clean overruns.
 
 The `test_hardware --run` command is an explicit physical-device test that is
 not registered with CTest. It resets the dongle and exercises finite reads,
