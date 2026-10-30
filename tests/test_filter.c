@@ -24,7 +24,7 @@ enum { RF0_160, RF1_160, DIG0, DIG1, RF0_B00, RF1_B00, RF0_B04, RF1_B04, CHANNEL
 struct model {
     uint32_t value[REGISTERS];
     unsigned operations, fail_at, fail_again, writes, latch_pulses;
-    bool drop_write, wide;
+    bool drop_write, wide, stick_latch;
 };
 static const uint32_t baseline[REGISTERS] = {
     0x2a123456, 0x17654321, 0xa0abcdef, 0xd0765432, 0x3f00a5a5, 0x15005a5a,
@@ -42,6 +42,12 @@ static int access_word(struct model *model, unsigned field, uint32_t *value, boo
         if ((field == LATCH0 || field == LATCH1) && (*value & 0x80000000u) &&
             !(model->value[field] & 0x80000000u))
             ++model->latch_pulses;
+        /* A stuck latch ignores the one write that should clear its high bit. */
+        if (model->stick_latch && field == LATCH0 && !(*value & 0x80000000u) &&
+            (model->value[field] & 0x80000000u)) {
+            model->stick_latch = false;
+            return 0;
+        }
         if (model->drop_write) model->drop_write = false;
         else model->value[field] = *value;
     } else {
@@ -182,19 +188,51 @@ static void test_rate_profile(unsigned index)
     }
 }
 
-/* At 10 and 20 MSps the channel field holds the nearest 2.4 GHz channel. */
+/* A latch bit left high still gets a full pulse, and one that will not clear
+ * fails the setup and restores the baseline.
+ */
+static void test_latch(void)
+{
+    struct model model;
+    birriasdr_dev_t dev;
+    initialize(&model, &dev);
+    model.wide = true;
+    model.value[LATCH0] |= 0x80000000u;
+    model.value[LATCH1] |= 0x80000000u;
+    dev.rate = 80000000;
+    dev.frequency = 2437000000u;
+    CHECK(mt_configure_filter(&dev) == 0);
+    CHECK(model.latch_pulses == 2);
+    CHECK(!(model.value[LATCH0] & 0x80000000u) && !(model.value[LATCH1] & 0x80000000u));
+    CHECK(mt_restore_filter(&dev) == 0);
+
+    initialize(&model, &dev);
+    model.wide = true;
+    dev.rate = 80000000;
+    dev.frequency = 2437000000u;
+    model.stick_latch = true;
+    CHECK(mt_configure_filter(&dev) == BIRRIASDR_ERROR_STATE);
+    CHECK(!dev.mt7921.filter_saved);
+    check_restored(&model, 0);
+}
+
+/* At 10 and 20 MSps the channel field holds the nearest 2.4 GHz channel,
+ * compared in Hz.
+ */
 static void test_channels(void)
 {
-    static const struct { uint64_t mhz; uint32_t channel; } cases[] = {
-        {2156, 1}, {2412, 1}, {2414, 1}, {2415, 2}, {2437, 6}, {2462, 11}, {2472, 13},
-        {2478, 13}, {2479, 14}, {2484, 14}, {2610, 14}, {5180, 14}};
+    static const struct { uint64_t hz; uint32_t channel; } cases[] = {
+        {2156000000u, 1},  {2412000000u, 1},  {2414000000u, 1},  {2414500000u, 1},
+        {2414750000u, 2},  {2415000000u, 2},  {2437000000u, 6},  {2462000000u, 11},
+        {2472000000u, 13}, {2478000000u, 13}, {2478000001u, 14}, {2479000000u, 14},
+        {2484000000u, 14}, {2610000000u, 14}, {5180000000u, 14}};
     for (unsigned i = 0; i < sizeof(cases) / sizeof(cases[0]); ++i) {
         struct model model;
         birriasdr_dev_t dev;
         initialize(&model, &dev);
         model.wide = true;
         dev.rate = 20000000;
-        dev.frequency = cases[i].mhz * 1000000u;
+        dev.frequency = cases[i].hz;
         CHECK(mt_configure_filter(&dev) == 0);
         CHECK(((model.value[CHANNEL] >> 4) & 0xf) == cases[i].channel);
         CHECK(mt_restore_filter(&dev) == 0);
@@ -245,6 +283,7 @@ int main(void)
     CHECK(mt_configure_filter(&dev) == BIRRIASDR_ERROR_UNSUPPORTED && !model.operations);
     for (unsigned i = 0; i < 3; ++i)
         test_rate_profile(i);
+    test_latch();
     test_channels();
     puts("Filter configuration, preservation, rollback and readback tests passed");
     return 0;

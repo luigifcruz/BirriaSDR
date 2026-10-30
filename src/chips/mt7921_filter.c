@@ -111,26 +111,36 @@ static uint32_t rate_fields(const birriasdr_dev_t *dev)
     return (1u << FIELD_COUNT) - 1u;
 }
 
+/* The 2.4 GHz channel whose center is nearest, compared in Hz. Channels 1 to 13
+ * are 5 MHz apart from 2412 MHz, and channel 14 is at 2484 MHz. A tie selects
+ * the lower channel.
+ */
+static uint32_t nearest_channel(uint64_t frequency)
+{
+    uint32_t best = 1;
+    uint64_t best_distance = UINT64_MAX;
+    for (uint32_t channel = 1; channel <= 14; ++channel) {
+        uint64_t center = channel == 14 ? UINT64_C(2484000000)
+                                        : UINT64_C(2407000000) + UINT64_C(5000000) * channel;
+        uint64_t distance = frequency > center ? frequency - center : center - frequency;
+        if (distance < best_distance) {
+            best = channel;
+            best_distance = distance;
+        }
+    }
+    return best;
+}
+
 /* The value a rate writes to one field. At 10 and 20 MSps the channel field
  * gets the 2.4 GHz channel number nearest the requested center, as the vendor
- * writes for a 20 MHz channel. Channel 14 (2484 MHz) is nearest above 2478 MHz.
- * The field is set once per startup and not changed by live retunes, because
- * its effect is not decoded.
+ * writes for a 20 MHz channel. The field is set once per startup and not
+ * changed by live retunes, because its effect is not decoded.
  */
 static uint32_t field_value(const birriasdr_dev_t *dev, unsigned field)
 {
     const struct filter_field *f = &fields[field];
-    if (mt_rate_packed(dev->rate) && field == FIELD_CHANNEL) {
-        uint64_t mhz = dev->frequency / 1000000;
-        uint32_t channel;
-        if (mhz > 2478)
-            channel = 14;
-        else if (mhz <= 2412)
-            channel = 1;
-        else if ((channel = (uint32_t)((mhz - 2407 + 2) / 5)) > 13)
-            channel = 13;
-        return channel << 4;
-    }
+    if (mt_rate_packed(dev->rate) && field == FIELD_CHANNEL)
+        return nearest_channel(dev->frequency) << 4;
     switch (dev->rate) {
     case 10000000:
         return f->value10;
@@ -168,14 +178,27 @@ static int filter_write(birriasdr_dev_t *dev, unsigned field, uint32_t value)
 }
 
 /* The digital rate class takes effect on a pulse of 0x8300c008/0x8301c008[31],
- * as the vendor firmware does. The 40 MHz profile never needed it.
+ * as the vendor firmware does. The 40 MHz profile never needed it. Clear both
+ * bits first, so the pulse starts low even if a bit was left set, then set and
+ * clear them, and check that both read back low. The high state is not read
+ * back, because the hardware may clear the bit itself.
  */
 static int latch_rate_class(birriasdr_dev_t *dev)
 {
-    BS_TRY(bs_update32(dev, BS_MMIO, 0x8300c008, 0, 0x80000000));
-    BS_TRY(bs_update32(dev, BS_MMIO, 0x8301c008, 0, 0x80000000));
-    BS_TRY(bs_update32(dev, BS_MMIO, 0x8300c008, 0x80000000, 0));
-    return bs_update32(dev, BS_MMIO, 0x8301c008, 0x80000000, 0);
+    static const uint32_t latches[] = {0x8300c008, 0x8301c008};
+    uint32_t value;
+    for (unsigned i = 0; i < 2; ++i)
+        BS_TRY(bs_update32(dev, BS_MMIO, latches[i], 0x80000000, 0));
+    for (unsigned i = 0; i < 2; ++i)
+        BS_TRY(bs_update32(dev, BS_MMIO, latches[i], 0, 0x80000000));
+    for (unsigned i = 0; i < 2; ++i)
+        BS_TRY(bs_update32(dev, BS_MMIO, latches[i], 0x80000000, 0));
+    for (unsigned i = 0; i < 2; ++i) {
+        BS_TRY(bs_read32(dev, BS_MMIO, latches[i], &value));
+        if (value & 0x80000000)
+            return BIRRIASDR_ERROR_STATE;
+    }
+    return 0;
 }
 
 /* Restore digital fields first, then analog width, before the subsystem reset.
