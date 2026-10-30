@@ -25,7 +25,11 @@
 #define MAX_PACKET_SAMPLES 16376u
 #define DEFAULT_RECOVERY_RESTARTS 3u
 
-static volatile sig_atomic_t interrupted;
+/* Written by the signal handler and read by the watcher and callback threads,
+ * so it must be atomic. A lock-free atomic is also safe in a signal handler.
+ */
+static atomic_bool interrupted;
+_Static_assert(ATOMIC_BOOL_LOCK_FREE == 2, "the interrupt flag must be lock-free");
 
 struct udp_stream {
     birriasdr_dev_t *dev;
@@ -261,7 +265,7 @@ static void send_samples(const int16_t *iq, uint32_t count, uint64_t first, void
         if (++stream->pending_samples == stream->packet_samples && send_pending(stream))
             stream->error = 1;
     }
-    if (interrupted || stream->error)
+    if (atomic_load(&interrupted) || stream->error)
         (void)birriasdr_cancel_async(stream->dev);
 }
 
@@ -278,7 +282,7 @@ static void on_recovery(const struct birriasdr_recovery_event *event, void *cont
     fprintf(stderr, "Stream gap before delivered sample %" PRIu64
                     ", attempt %u: %s\n",
             event->next_sample, event->attempt, birriasdr_strerror(event->error));
-    if (interrupted)
+    if (atomic_load(&interrupted))
         (void)birriasdr_cancel_async(stream->dev);
 }
 
@@ -286,7 +290,7 @@ static void on_recovery(const struct birriasdr_recovery_event *event, void *cont
 static void on_signal(int signal_number)
 {
     (void)signal_number;
-    interrupted = 1;
+    atomic_store(&interrupted, true);
 }
 
 struct interrupt_watch {
@@ -304,7 +308,7 @@ static void *watch_interrupt(void *context)
     const struct timespec period = {.tv_nsec = 50000000};
 
     while (!atomic_load(&watch->done)) {
-        if (interrupted)
+        if (atomic_load(&interrupted))
             (void)birriasdr_cancel_async(watch->dev);
         nanosleep(&period, NULL);
     }
@@ -320,7 +324,6 @@ int main(int argc, char **argv)
     struct udp_stream stream = {.socket_fd = -1};
     struct interrupt_watch watch;
     pthread_t watcher;
-    bool watching = false;
     uint64_t unsent;
     struct birriasdr_stream_stats stats = {0};
     birriasdr_dev_t *dev = NULL;
@@ -375,17 +378,21 @@ int main(int argc, char **argv)
     if (!result) {
         watch.dev = dev;
         atomic_init(&watch.done, false);
-        watching = !pthread_create(&watcher, NULL, watch_interrupt, &watch);
-        if (!watching)
-            fprintf(stderr, "Ctrl-C will take effect at the next callback\n");
+        if (pthread_create(&watcher, NULL, watch_interrupt, &watch)) {
+            /* Without the watcher, Ctrl-C could not stop a read that stalls before
+             * its first callback, so do not start one.
+             */
+            fprintf(stderr, "Interrupt watcher: cannot start a thread\n");
+            result = BIRRIASDR_ERROR_NO_MEMORY;
+        }
+    }
+    if (!result) {
         fprintf(stderr,
                 "Sending 40 MSps CS16 to %s:%s in packets of %u samples. Press Ctrl-C to stop.\n",
                 options.host, options.port, options.packet_samples);
         result = birriasdr_read_async(dev, send_samples, &stream, 0, 0);
-        if (watching) {
-            atomic_store(&watch.done, true);
-            pthread_join(watcher, NULL);
-        }
+        atomic_store(&watch.done, true);
+        pthread_join(watcher, NULL);
         /* Callbacks have finished, so the last partial datagram is safe to send. */
         if (!stream.error && send_pending(&stream))
             stream.error = 1;

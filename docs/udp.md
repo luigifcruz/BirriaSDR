@@ -55,7 +55,7 @@ Run the help command to see the accepted options:
 | --- | --- | --- |
 | `--host HOST` | `127.0.0.1` | Selects the UDP destination address |
 | `--port PORT` | `1234` | Selects a destination port from 1 to 65,535 |
-| `--frequency HZ` | Device default | Selects the receiver center frequency in whole hertz, within the bands listed in the README [specifications](../README.md#specifications). Another value fails with `UNSUPPORTED` |
+| `--frequency HZ` | Device default | Selects the receiver center frequency in whole hertz, from 2156 to 2610 MHz (2190 to 2610 MHz on generic-ID boards) or 4500 to 6200 MHz. Another value fails with `UNSUPPORTED` |
 | `--device INDEX` | `0` | Selects a device from the `birria_rx --list` output |
 | `--packet-samples COUNT` | `2048` | Selects 1 to 16,376 complex samples per datagram |
 | `--recovery COUNT` | `3` | Selects the bounded full restart budget, and zero disables recovery |
@@ -169,8 +169,8 @@ through `--frequency`. The datagrams do not carry the receiver frequency.
 
 Keep the destination on the local host first. Reduce other system load and
 confirm that the receiving application can process a 40 MSps source. A larger
-packet sample count reduces packet and callback frequency, but larger datagrams
-increase fragmentation and loss risk on a physical network.
+packet sample count reduces the datagram rate, but larger datagrams increase
+fragmentation and loss risk on a physical network.
 
 ### The program cannot open the dongle
 

@@ -81,7 +81,7 @@ static int test_datagrams(void)
     CHECK(!socketpair(AF_UNIX, SOCK_DGRAM, 0, sockets));
     CHECK(!setsockopt(sockets[1], SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)));
     stream.socket_fd = sockets[0];
-    interrupted = 0;
+    atomic_store(&interrupted, false);
     send_samples(samples, 5, 0, &stream);
     CHECK(!stream.error);
     CHECK(stream.samples_seen == 5);
@@ -124,7 +124,7 @@ static int test_carry(void)
     memset(&stream, 0, sizeof(stream));
     stream.socket_fd = sockets[0];
     stream.packet_samples = 3;
-    interrupted = 0;
+    atomic_store(&interrupted, false);
     send_samples(first, 2, 0, &stream);
     CHECK(stream.datagrams_sent == 0 && stream.pending_samples == 2);
     send_samples(second, 2, 2, &stream);
@@ -157,7 +157,7 @@ static int test_send_failures(void)
     memset(&stream, 0, sizeof(stream));
     stream.socket_fd = sockets[0];
     stream.packet_samples = 3;
-    interrupted = 0;
+    atomic_store(&interrupted, false);
     for (int i = 0; i < 100000 && !stream.datagrams_dropped && !stream.error; ++i)
         send_samples(samples, 3, 0, &stream);
     CHECK(!stream.error);
@@ -175,12 +175,50 @@ static int test_send_failures(void)
     return 0;
 }
 
+/* Check that a gap flushes the partial datagram first, so no datagram spans it,
+ * and that packing starts fresh after the gap.
+ */
+static int test_gap_flush(void)
+{
+    static const int16_t before[] = {1, 2, 3, 4};
+    static const int16_t after[] = {5, 6, 7, 8, 9, 10};
+    static const uint8_t flushed[] = {1, 0, 2, 0, 3, 0, 4, 0};
+    static const uint8_t next[] = {5, 0, 6, 0, 7, 0, 8, 0, 9, 0, 10, 0};
+    const struct birriasdr_recovery_event event = {.next_sample = 2, .attempt = 1};
+    struct timeval timeout = {.tv_sec = 1};
+    static struct udp_stream stream;
+    uint8_t received[64];
+    int sockets[2];
+
+    CHECK(!socketpair(AF_UNIX, SOCK_DGRAM, 0, sockets));
+    CHECK(!setsockopt(sockets[1], SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)));
+    memset(&stream, 0, sizeof(stream));
+    stream.socket_fd = sockets[0];
+    stream.packet_samples = 3;
+    atomic_store(&interrupted, false);
+    send_samples(before, 2, 0, &stream);
+    CHECK(stream.datagrams_sent == 0 && stream.pending_samples == 2);
+    on_recovery(&event, &stream);
+    CHECK(stream.gaps == 1 && stream.pending_samples == 0 && stream.datagrams_sent == 1);
+    CHECK(recv(sockets[1], received, sizeof(received), 0) == (ssize_t)sizeof(flushed));
+    CHECK(!memcmp(received, flushed, sizeof(flushed)));
+    send_samples(after, 3, 2, &stream);
+    CHECK(stream.datagrams_sent == 2 && stream.pending_samples == 0);
+    CHECK(recv(sockets[1], received, sizeof(received), 0) == (ssize_t)sizeof(next));
+    CHECK(!memcmp(received, next, sizeof(next)));
+
+    close(sockets[0]);
+    close(sockets[1]);
+    return 0;
+}
+
 int main(void)
 {
     CHECK(!test_options());
     CHECK(!test_datagrams());
     CHECK(!test_carry());
     CHECK(!test_send_failures());
+    CHECK(!test_gap_flush());
     puts("UDP option and packetization tests passed");
     return 0;
 }
