@@ -49,6 +49,18 @@ static inline bool mt_rate_supported(uint32_t rate)
     return rate == 10000000 || rate == 20000000 || rate == 40000000 || rate == 80000000;
 }
 
+/* 10 and 20 MSps use the SRAM packer, which keeps one tap sample in four. */
+static inline bool mt_rate_packed(uint32_t rate)
+{
+    return rate == 10000000 || rate == 20000000;
+}
+
+/* 20 and 80 MSps use the 80 MSps capture tap; 10 and 40 MSps use the 40 MSps tap. */
+static inline bool mt_rate_fast_tap(uint32_t rate)
+{
+    return rate == 20000000 || rate == 80000000;
+}
+
 /* A mathematical frequency plan, not a claim of analog tuning coverage.
  * nominal_hz_num / nominal_hz_den is exact for the assumed 60 MHz reference.
  * Both bands share this layout; only the VCO multiplier differs.

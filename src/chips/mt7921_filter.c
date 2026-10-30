@@ -52,26 +52,50 @@
  * 0x83080000[12] is set only at 20 MHz. RF fields name their physical SPI
  * bank; the others are MMIO.
  */
-enum { FIELD_CHANNEL = 8, FIELD_BW20 = 9, FIELD_NARROW0 = 10, FIELD_NARROW1 = 11,
-       FIELD_COUNT = 12 };
+enum {
+    FIELD_ANALOG0,      /* RF port 0 0x160[31:30], analog profile code */
+    FIELD_ANALOG1,      /* RF port 1 0x160[31:30] */
+    FIELD_DIGITAL0,     /* 0x83081000[27:24], digital bandwidth class */
+    FIELD_DIGITAL1,     /* 0x83091000[27:24] */
+    FIELD_CHAIN_WIDTH0, /* RF port 0 0xb00[29:24], per-chain analog word */
+    FIELD_CHAIN_WIDTH1, /* RF port 1 0xb00[29:24] */
+    FIELD_CHAIN_SHAPE0, /* RF port 0 0xb04[28:24] and [7:6] */
+    FIELD_CHAIN_SHAPE1, /* RF port 1 0xb04[28:24] and [7:6] */
+    FIELD_CHANNEL,      /* 0x830a0080[7:4], channel number, not decoded */
+    FIELD_MODE20,       /* 0x83080000[12], set by the vendor at 20 MHz */
+    FIELD_NARROW0,      /* 0x83081000[30:28], narrow digital filter */
+    FIELD_NARROW1,      /* 0x83091000[30:28] */
+    FIELD_COUNT
+};
+_Static_assert(FIELD_COUNT == sizeof(((birriasdr_dev_t *)0)->mt7921.filter_baseline) /
+                                  sizeof(uint32_t),
+               "the saved baseline must hold every filter field");
+
 static const struct filter_field {
     bool rf;
     unsigned port;
-    uint32_t address, mask, value20, value40, value80;
+    uint32_t address, mask, value10, value20, value40, value80;
 } fields[FIELD_COUNT] = {
-    {true, 0, 0x160, 0xc0000000, 0, 0x40000000, 0x80000000},
-    {true, 1, 0x160, 0xc0000000, 0, 0x40000000, 0x80000000},
-    {false, 0, 0x83081000, 0x0f000000, 0, 0x01000000, 0x02000000},
-    {false, 0, 0x83091000, 0x0f000000, 0, 0x01000000, 0x02000000},
-    {true, 0, 0xb00, 0x3f000000, 0x10000000, 0, 0x20000000},
-    {true, 1, 0xb00, 0x3f000000, 0x10000000, 0, 0x20000000},
-    {true, 0, 0xb04, 0x1f0000c0, 0x0f000040, 0, 0x1f000080},
-    {true, 1, 0xb04, 0x1f0000c0, 0x0f000040, 0, 0x1f000080},
-    {false, 0, 0x830a0080, 0x000000f0, 0, 0, 0x00000060},
-    {false, 0, 0x83080000, 0x00001000, 0x00001000, 0, 0},
-    {false, 0, 0x83081000, 0x70000000, 0x70000000, 0, 0},
-    {false, 0, 0x83091000, 0x70000000, 0x70000000, 0, 0}
+    [FIELD_ANALOG0] = {true, 0, 0x160, 0xc0000000, 0, 0, 0x40000000, 0x80000000},
+    [FIELD_ANALOG1] = {true, 1, 0x160, 0xc0000000, 0, 0, 0x40000000, 0x80000000},
+    [FIELD_DIGITAL0] = {false, 0, 0x83081000, 0x0f000000, 0, 0, 0x01000000, 0x02000000},
+    [FIELD_DIGITAL1] = {false, 0, 0x83091000, 0x0f000000, 0, 0, 0x01000000, 0x02000000},
+    [FIELD_CHAIN_WIDTH0] = {true, 0, 0xb00, 0x3f000000, 0x10000000, 0x10000000, 0, 0x20000000},
+    [FIELD_CHAIN_WIDTH1] = {true, 1, 0xb00, 0x3f000000, 0x10000000, 0x10000000, 0, 0x20000000},
+    [FIELD_CHAIN_SHAPE0] = {true, 0, 0xb04, 0x1f0000c0, 0x0f000040, 0x0f000040, 0, 0x1f000080},
+    [FIELD_CHAIN_SHAPE1] = {true, 1, 0xb04, 0x1f0000c0, 0x0f000040, 0x0f000040, 0, 0x1f000080},
+    [FIELD_CHANNEL] = {false, 0, 0x830a0080, 0x000000f0, 0, 0, 0, 0x00000060},
+    [FIELD_MODE20] = {false, 0, 0x83080000, 0x00001000, 0x00001000, 0x00001000, 0, 0},
+    [FIELD_NARROW0] = {false, 0, 0x83081000, 0x70000000, 0x70000000, 0, 0, 0},
+    [FIELD_NARROW1] = {false, 0, 0x83091000, 0x70000000, 0x70000000, 0, 0, 0}
 };
+
+#define FIELD_BIT(field) (1u << (field))
+/* The original matched 40 MHz profile: analog code and digital class only. */
+static const uint32_t profile40_fields = FIELD_BIT(FIELD_ANALOG0) | FIELD_BIT(FIELD_ANALOG1) |
+                                         FIELD_BIT(FIELD_DIGITAL0) | FIELD_BIT(FIELD_DIGITAL1);
+static const uint32_t chain_fields = FIELD_BIT(FIELD_CHAIN_WIDTH0) | FIELD_BIT(FIELD_CHAIN_WIDTH1) |
+                                     FIELD_BIT(FIELD_CHAIN_SHAPE0) | FIELD_BIT(FIELD_CHAIN_SHAPE1);
 
 /* The fields one rate owns, as a bit mask over fields[]. 10 MSps is the 20 MHz
  * profile plus 0x83081000/0x83091000[30:28] = 7, one of two extra codes in the
@@ -81,24 +105,25 @@ static const struct filter_field {
  */
 static uint32_t rate_fields(const birriasdr_dev_t *dev)
 {
-    bool narrow = dev->rate == 10000000;
-    uint32_t mask = dev->rate == 40000000 ? 0x00f : 0x0ff;
-    if (dev->rate != 40000000)
-        mask |= 1u << FIELD_CHANNEL;
-    if (dev->rate == 20000000 || narrow)
-        mask |= 1u << FIELD_BW20;
-    if (narrow)
-        mask |= 1u << FIELD_NARROW0 | 1u << FIELD_NARROW1;
+    uint32_t mask = profile40_fields;
+    if (dev->rate == 40000000)
+        return mask;
+    mask |= chain_fields | FIELD_BIT(FIELD_CHANNEL);
+    if (mt_rate_packed(dev->rate))
+        mask |= FIELD_BIT(FIELD_MODE20);
+    if (dev->rate == 10000000)
+        mask |= FIELD_BIT(FIELD_NARROW0) | FIELD_BIT(FIELD_NARROW1);
     return mask;
 }
 
-/* The vendor writes the 2.4 GHz channel number for a 20 MHz channel; use the
- * nearest one to the requested center.
+/* The value a rate writes to one field. At 10 and 20 MSps the channel field
+ * gets the 2.4 GHz channel number nearest the requested center, as the vendor
+ * writes for a 20 MHz channel.
  */
 static uint32_t field_value(const birriasdr_dev_t *dev, unsigned field)
 {
-    bool narrow = dev->rate == 10000000 || dev->rate == 20000000;
-    if (narrow && field == FIELD_CHANNEL) {
+    const struct filter_field *f = &fields[field];
+    if (mt_rate_packed(dev->rate) && field == FIELD_CHANNEL) {
         uint64_t mhz = dev->frequency / 1000000;
         uint32_t channel;
         if (mhz >= 2482)
@@ -109,11 +134,19 @@ static uint32_t field_value(const birriasdr_dev_t *dev, unsigned field)
             channel = 13;
         return channel << 4;
     }
-    if (narrow)
-        return fields[field].value20;
-    return dev->rate == 80000000 ? fields[field].value80 : fields[field].value40;
+    switch (dev->rate) {
+    case 10000000:
+        return f->value10;
+    case 20000000:
+        return f->value20;
+    case 80000000:
+        return f->value80;
+    default:
+        return f->value40;
+    }
 }
 
+/* Read the whole register that holds one field. */
 static int filter_read(birriasdr_dev_t *dev, unsigned field, uint32_t *value)
 {
     const struct filter_field *f = &fields[field];
@@ -153,8 +186,11 @@ static int latch_rate_class(birriasdr_dev_t *dev)
  */
 int mt_restore_filter(birriasdr_dev_t *dev)
 {
-    static const unsigned order[FIELD_COUNT] = {FIELD_NARROW0, FIELD_NARROW1, 2, 3, FIELD_BW20,
-                                                FIELD_CHANNEL, 0, 1, 4, 5, 6, 7};
+    /* Digital fields first, then analog width. */
+    static const unsigned order[FIELD_COUNT] = {
+        FIELD_NARROW0,      FIELD_NARROW1,      FIELD_DIGITAL0,     FIELD_DIGITAL1,
+        FIELD_MODE20,       FIELD_CHANNEL,      FIELD_ANALOG0,      FIELD_ANALOG1,
+        FIELD_CHAIN_WIDTH0, FIELD_CHAIN_WIDTH1, FIELD_CHAIN_SHAPE0, FIELD_CHAIN_SHAPE1};
     uint32_t mask = dev->mt7921.filter_fields;
     int first_error = 0;
     if (!dev->mt7921.filter_saved)
@@ -168,7 +204,7 @@ int mt_restore_filter(birriasdr_dev_t *dev)
         if (result < 0 && !first_error)
             first_error = result;
     }
-    if (mask != 0x00f) {
+    if (mask != profile40_fields) {
         int result = latch_rate_class(dev);
         if (result < 0 && !first_error)
             first_error = result;
@@ -204,7 +240,7 @@ int mt_configure_filter(birriasdr_dev_t *dev)
         if (result < 0)
             return mt_restore_filter(dev) < 0 ? BIRRIASDR_ERROR_STATE : result;
     }
-    if (mask != 0x00f) {
+    if (mask != profile40_fields) {
         int result = latch_rate_class(dev);
         if (result < 0)
             return mt_restore_filter(dev) < 0 ? BIRRIASDR_ERROR_STATE : result;
