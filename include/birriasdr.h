@@ -213,7 +213,9 @@ uint64_t birriasdr_get_center_freq(const birriasdr_dev_t *dev);
  * analog and digital settings. 10 MSps uses the 20 MHz analog setting with a
  * narrower, about 10 MHz digital filter, which suppresses, but does not remove,
  * energy from just outside the span. USB load is about 80, 160, 160 and
- * 320 MB/s: the device pads samples at 10 and 20 MSps.
+ * 320 MB/s: the device pads samples at 10 and 20 MSps. Preparation reads back
+ * every filter and capture field it writes, but cannot confirm that the 10, 20
+ * and 80 MSps digital class latch took effect.
  * This is not a calibrated passband or an alias-rejection guarantee.
  */
 int birriasdr_set_sample_rate(birriasdr_dev_t *dev, uint32_t samples_per_second);

@@ -236,7 +236,8 @@ int mt_restore_filter(birriasdr_dev_t *dev)
     return first_error;
 }
 
-/* Apply the fixed profile once per preparation; this is not a live control.
+/* Apply the profile selected by the sample rate once per preparation; this is
+ * not a live control.
  * The prepare owner handles any remaining cleanup and whole-startup retry.
  * The 40 MHz profile keeps its original four writes and no latch pulse.
  */

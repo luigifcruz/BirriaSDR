@@ -159,10 +159,13 @@ channel and mode fields against values written out from the documented layout,
 the rate class latch pulses, a latch left high or stuck and the nearest-channel
 mapping. The RF sequence test also checks that capture setup at 10, 20 and 80
 MSps differs from 40 MSps only in the tap rate and packer bits. The current
-offline suite contains twelve CTest cases, or thirteen when SoapySDR is
+offline suite contains thirteen CTest cases, or fourteen when SoapySDR is
 installed. The SoapySDR rate test builds the module against stub library
-functions and checks that it lists exactly the native rates, passes each one
-through and refuses any other value before it reaches the library. The UDP
+functions and checks that it lists exactly the native rates and passes each one
+through. A request within 1 Hz of a native rate reaches the library as that
+exact rate, and any other value is refused before it reaches the library. The
+recorder argument test checks that a missing option value, an unknown option or
+an option-like output name is a usage error, never an output file. The UDP
 packetizer test checks the `birria_udp` option parsing, datagram boundaries
 across callbacks and gaps, little-endian encoding, dropped datagrams and send
 failures over a local socket pair, without hardware. The UDP interrupt test runs

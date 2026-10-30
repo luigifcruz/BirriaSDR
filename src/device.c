@@ -337,7 +337,8 @@ int birriasdr_set_agc_mode(birriasdr_dev_t *dev, int enabled)
 }
 
 /* TODO: independently selectable filter widths and calibrated RF response.
- * The current backend applies its fixed matched profile during preparation.
+ * The current backend applies the profile selected by the sample rate during
+ * preparation.
  */
 int birriasdr_set_tuner_bandwidth(birriasdr_dev_t *dev, uint32_t bandwidth)
 {
