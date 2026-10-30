@@ -268,9 +268,10 @@ void SoapyBirria::setSampleRate(const int, const size_t, const double rate)
      * the reader lock, so the change falls between two reads. Samples at the
      * old rate are dropped, and the next read returns OVERFLOW. If the read
      * cannot restart, the stream stays active with no worker, so reads return
-     * STREAM_ERROR after the overflow.
+     * STREAM_ERROR after the overflow. An active stream whose read already
+     * ended restarts too, so queued old-rate samples never get the new rate.
      */
-    const bool restart = running_;
+    const bool restart = active_;
     std::unique_lock<std::mutex> reading(readerMutex_, std::defer_lock);
     if (restart) {
         {
@@ -525,7 +526,8 @@ int SoapyBirria::deactivateStream(SoapySDR::Stream *, const int flags, const lon
  * Wait only when nothing is ready. A gap ends the read early and returns
  * OVERFLOW on the next call, so no buffer spans it. An inactive stream waits
  * for the timeout and returns TIMEOUT, as SoapySDR requires. An active stream
- * whose read has ended returns STREAM_ERROR once its samples are drained.
+ * whose read has ended returns STREAM_ERROR once its samples are drained. A
+ * read during a rate-change restart waits for it, up to its timeout.
  */
 int SoapyBirria::readStream(SoapySDR::Stream *, void *const *buffs, const size_t numElems,
                             int &flags, long long &timeNs, const long timeoutUs)
@@ -538,14 +540,39 @@ int SoapyBirria::readStream(SoapySDR::Stream *, void *const *buffs, const size_t
         std::this_thread::sleep_until(deadline);
         return SOAPY_SDR_TIMEOUT;
     }
-    std::lock_guard<std::mutex> reading(readerMutex_);
+    for (;;) {
+        /* Wait out a rate-change restart without holding the reader lock, so
+         * the restart can take it. The deadline still applies.
+         */
+        {
+            std::unique_lock<std::mutex> lock(mutex_);
+            if (!cond_.wait_until(lock, deadline, [this] { return !restarting_; }))
+                return SOAPY_SDR_TIMEOUT;
+        }
+        std::lock_guard<std::mutex> reading(readerMutex_);
+        if (restarting_)
+            continue;
+        bool interrupted = false;
+        const int result = readLocked(buffs, numElems, deadline, interrupted);
+        if (!interrupted)
+            return result;
+    }
+}
+
+/* Copy what is available, up to numElems, with the reader lock held. A restart
+ * that begins before anything is copied sets interrupted, so the caller waits
+ * for it and reads again. One that begins later ends the read with what was
+ * copied.
+ */
+int SoapyBirria::readLocked(void *const *buffs, const size_t numElems,
+                            const std::chrono::steady_clock::time_point deadline,
+                            bool &interrupted)
+{
     size_t count = 0;
     while (count < numElems) {
-        /* A rate change is waiting for this read: return what was copied. */
         if (restarting_) {
-            if (count > 0)
-                break;
-            return SOAPY_SDR_TIMEOUT;
+            interrupted = count == 0;
+            break;
         }
         if (offset_ == current_.size() / 2) {
             std::unique_lock<std::mutex> lock(mutex_);
@@ -556,8 +583,10 @@ int SoapyBirria::readStream(SoapySDR::Stream *, void *const *buffs, const size_t
                         return !queue_.empty() || !running_ || restarting_;
                     }))
                     return SOAPY_SDR_TIMEOUT;
-                if (restarting_ && queue_.empty())
-                    return SOAPY_SDR_TIMEOUT;
+                if (restarting_ && queue_.empty()) {
+                    interrupted = true;
+                    return 0;
+                }
                 if (queue_.empty())
                     return active_ ? SOAPY_SDR_STREAM_ERROR : SOAPY_SDR_TIMEOUT;
             }

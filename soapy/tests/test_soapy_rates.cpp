@@ -34,6 +34,9 @@ static unsigned stub_rate_calls;
 static std::atomic<bool> stub_reading{false}, stub_cancel{false};
 static std::atomic<unsigned> stub_reads{0}, stub_busy_rate_calls{0};
 static std::atomic<bool> stub_fail_read{false}; /* the next read ends at once with an error */
+static std::atomic<int> stub_end_after{0};        /* the next read fails after this many chunks */
+static std::atomic<bool> stub_slow_rate{false};   /* the next rate change takes 100 ms */
+static std::atomic<bool> stub_rate_entered{false};
 
 /* Test hooks compiled into Device.cpp for this test. The read hook pauses one
  * armed read between taking a chunk and copying it, for up to 300 ms, and
@@ -68,6 +71,10 @@ int birriasdr_set_recovery(birriasdr_dev_t *, uint32_t, birriasdr_recovery_cb_t,
 int birriasdr_set_sample_rate(birriasdr_dev_t *, uint32_t rate)
 {
     ++stub_rate_calls;
+    if (stub_slow_rate.exchange(false)) {
+        stub_rate_entered = true;
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
     if (stub_reading) {
         ++stub_busy_rate_calls; /* the real library refuses this */
         return BIRRIASDR_ERROR_BUSY;
@@ -107,7 +114,12 @@ int birriasdr_read_async(birriasdr_dev_t *, birriasdr_read_async_cb_t callback, 
         iq[2 * i] = tag;
         iq[2 * i + 1] = 0;
     }
-    while (!stub_cancel) {
+    const int end_after = stub_end_after.exchange(0);
+    for (int chunks = 0; !stub_cancel; ++chunks) {
+        if (end_after && chunks == end_after) {
+            stub_reading = false;
+            return BIRRIASDR_ERROR_IO;
+        }
         callback(iq, 1024, 0, context);
         std::this_thread::sleep_for(std::chrono::microseconds(200));
     }
@@ -298,6 +310,51 @@ int main()
     CHECK(dev.deactivateStream(stream) == 0);
     CHECK(dev.activateStream(stream) == 0);
     committed = static_cast<int>(dev.getSampleRate(SOAPY_SDR_RX, 0) / 1e6);
+
+    /* A stream whose read already ended, with samples still queued, must not
+     * deliver those samples under the new rate: a rate change restarts it, and
+     * the first read is the overflow.
+     */
+    CHECK(dev.deactivateStream(stream) == 0);
+    stub_end_after = 3;
+    CHECK(dev.activateStream(stream) == 0);
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    {
+        const double next = dev.getSampleRate(SOAPY_SDR_RX, 0) == 20e6 ? 40e6 : 20e6;
+        dev.setSampleRate(SOAPY_SDR_RX, 0, next);
+        static int16_t buf[2 * 1024];
+        void *buffs[] = {buf};
+        int flags = 0;
+        long long time = 0;
+        CHECK(dev.readStream(stream, buffs, 1024, flags, time, 500000) == SOAPY_SDR_OVERFLOW);
+        const int n = dev.readStream(stream, buffs, 1024, flags, time, 500000);
+        CHECK(n > 0 && buf[0] == static_cast<int>(next / 1e6));
+    }
+
+    /* A read that starts during a restart waits for it, up to its timeout,
+     * and returns the overflow instead of an early timeout.
+     */
+    {
+        const double next = dev.getSampleRate(SOAPY_SDR_RX, 0) == 20e6 ? 40e6 : 20e6;
+        stub_rate_entered = false;
+        stub_slow_rate = true;
+        std::thread setter([&] { dev.setSampleRate(SOAPY_SDR_RX, 0, next); });
+        for (int i = 0; i < 2000 && !stub_rate_entered; ++i)
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        CHECK(stub_rate_entered);
+        static int16_t buf[2 * 1024];
+        void *buffs[] = {buf};
+        int flags = 0;
+        long long time = 0;
+        const auto start = std::chrono::steady_clock::now();
+        const int n = dev.readStream(stream, buffs, 1024, flags, time, 1000000);
+        const auto waited = std::chrono::steady_clock::now() - start;
+        setter.join();
+        if (n != SOAPY_SDR_OVERFLOW)
+            fprintf(stderr, "read during restart returned %d\n", n);
+        CHECK(n == SOAPY_SDR_OVERFLOW);
+        CHECK(waited < std::chrono::milliseconds(900));
+    }
 
     /* A restart whose read fails at once must end the stream with an error
      * after the overflow, never leave reads timing out forever.

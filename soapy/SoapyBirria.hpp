@@ -8,6 +8,7 @@
 #include <SoapySDR/Formats.h>
 #include <birriasdr.h>
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <deque>
 #include <mutex>
@@ -79,6 +80,8 @@ private:
     static void recoveryCallback(const birriasdr_recovery_event *event, void *ctx);
     void onSamples(const int16_t *iq, uint32_t count);
     void onGap();
+    int readLocked(void *const *buffs, size_t numElems,
+                   std::chrono::steady_clock::time_point deadline, bool &interrupted);
     void markGap();
     void onCallbackFailure();
     int startWorker();
