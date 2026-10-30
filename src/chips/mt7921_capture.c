@@ -111,7 +111,8 @@ int mt_configure_capture(birriasdr_dev_t *dev)
 }
 
 /* Release the custom program's GO gate only after the host has queued USB reads.
- * Starting ICAP earlier would consume the ~1.6 ms SRAM capacity during setup.
+ * Starting ICAP earlier would consume the SRAM capacity during setup: only about
+ * 0.8 ms at 80 MSps, 1.6 ms at 20 and 40 MSps and 3.3 ms at 10 MSps.
  */
 int mt_start(birriasdr_dev_t *dev)
 {
