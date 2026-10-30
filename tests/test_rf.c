@@ -15,6 +15,7 @@ struct model {
     bool stuck_standby;
     uint32_t fail_address;
     bool fail_after_write;
+    uint32_t ignore_address; /* a write here is recorded but does not take */
 };
 
 /* A sparse map models register readbacks, not the production implementation. */
@@ -83,6 +84,8 @@ static int write32(void *context, enum bs_space space, uint32_t address, uint32_
     }
     CHECK(model->written < 2048);
     model->writes[model->written++] = (struct word){target, address, value};
+    if (address == model->ignore_address && model->ignore_address)
+        return 0;
     if (target >= 16 && (address == 0xc68 || address == 0xca8))
         value &= 0x7fffffff;
     if (target == 21 && address == 0xb00 && model->stuck_standby)
@@ -422,6 +425,57 @@ static void test_fine_tuning(void)
 }
 
 /* Entire RF regression suite is read/write-model based and never opens USB. */
+/* Capture setup at every rate must match the 40 MSps write sequence except for
+ * the tap rate in 0x830ad448 and the packer bit in 0x800210b8. 20 and 80 MSps
+ * use the 80 MSps tap, and 10 and 20 MSps set the packer.
+ */
+static void test_capture_rates(void)
+{
+    static const uint32_t rates[] = {10000000, 20000000, 40000000, 80000000};
+    static struct model reference, model;
+    birriasdr_dev_t dev;
+    initialize(&reference, &dev);
+    CHECK(mt_configure_capture(&dev) == 0);
+    for (unsigned r = 0; r < sizeof(rates) / sizeof(rates[0]); ++r) {
+        const bool fast_tap = rates[r] == 20000000 || rates[r] == 80000000;
+        const bool packed = rates[r] == 10000000 || rates[r] == 20000000;
+        unsigned taps = 0, packers = 0;
+        initialize(&model, &dev);
+        dev.rate = rates[r];
+        CHECK(mt_configure_capture(&dev) == 0);
+        CHECK(model.written == reference.written);
+        for (size_t i = 0; i < model.written; ++i) {
+            const struct word *w = &model.writes[i], *ref = &reference.writes[i];
+            CHECK(w->space == ref->space && w->address == ref->address);
+            if (w->space == BS_MMIO && w->address == 0x830ad448) {
+                CHECK((w->value & 0x0fffffffu) == (fast_tap ? 0x00880400u : 0x008c0400u));
+                ++taps;
+            } else if (w->space == BS_MMIO && w->address == 0x800210b8) {
+                CHECK((w->value & 0x000f0000u) == (packed ? 0x00020000u : 0));
+                CHECK((w->value & 0x9c000000u) == 0x9c000000u);
+                ++packers;
+            } else {
+                CHECK(w->value == ref->value);
+            }
+        }
+        CHECK(taps == 1 && packers == 1);
+
+        /* An ignored tap write is caught at every rate, and an ignored packer
+         * write wherever the packer must change.
+         */
+        initialize(&model, &dev);
+        dev.rate = rates[r];
+        model.ignore_address = 0x830ad448;
+        CHECK(mt_configure_capture(&dev) == BIRRIASDR_ERROR_STATE);
+        if (packed) {
+            initialize(&model, &dev);
+            dev.rate = rates[r];
+            model.ignore_address = 0x800210b8;
+            CHECK(mt_configure_capture(&dev) == BIRRIASDR_ERROR_STATE);
+        }
+    }
+}
+
 int main(int argc, char **argv)
 {
     CHECK(argc == 2);
@@ -433,5 +487,6 @@ int main(int argc, char **argv)
     test_fine_tuning();
     test_band_switch();
     test_band_switch_failures();
+    test_capture_rates();
     return 0;
 }

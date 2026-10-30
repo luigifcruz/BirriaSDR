@@ -10,7 +10,7 @@ converts samples to the requested format without resampling.
 | Item | Value |
 | --- | --- |
 | Driver key | `driver=birria`. A dongle is selected by enumeration order with `index=N` |
-| Sample rates | 40 MSps, the only native rate. The module does not resample, so an application that needs a lower rate decimates the stream itself |
+| Sample rates | 10, 20, 40 and 80 MSps, the native rates. The module does not resample, so an application that needs a lower rate decimates the stream itself |
 | Stream formats | `CS16` (native) and `CF32` |
 | Frequency range | One range per band, from `birriasdr_get_tuning_band()`, so front ends do not offer the gap between bands. The bands match the frequency tuning row of the README [specifications](../README.md#specifications) |
 | Gains | `LNA` 0 to 5, `LPF` 0 to 8 and `DIG` 0 to 12. These are raw codes, not dB. The 5 GHz band needs `LNA` 4 or 5 for full sensitivity |
@@ -18,9 +18,14 @@ converts samples to the requested format without resampling.
 
 Each frequency range is a command interval from the library, not measured RF
 coverage. A band that the board cannot reach is left out. The sample rate can
-change only while the stream is stopped, and a rate outside the list is
-refused. The module has no hardware timestamps, no serial number, no bandwidth
-control and no sensors.
+change while streaming: the module stops the read, changes the rate and starts
+it again. A read in progress returns the samples it already has, and a read that
+starts during the change waits for it, up to its timeout, so no read mixes two
+rates. The next read returns `SOAPY_SDR_OVERFLOW`, and samples at the old rate
+are dropped. If the read cannot restart, later reads return
+`SOAPY_SDR_STREAM_ERROR`. A request within 1 Hz of a listed rate is set to
+exactly that rate, and any other rate is refused. The module has no hardware
+timestamps, no serial number, no bandwidth control and no sensors.
 
 Errors from tuning, sample-rate changes and gain changes are logged, not
 thrown, because some front ends do not catch exceptions from these calls and
@@ -95,15 +100,16 @@ SOAPY_SDR_PLUGIN_PATH=$PWD/build/soapy <application>
 Select the `driver=birria` device in the application's device list. Turn
 automatic gain off to use the `LNA`, `LPF` and `DIG` controls. A reasonable
 start is `LNA` 2, `LPF` 8 and `DIG` 0, or `LNA` 4 in the 5 GHz band. The sample
-rate of 40 MSps gives a 40 MHz span. Enter frequencies in
-Hz, for example `2437000000` for Wi-Fi channel 6. General-purpose SDR
-applications cannot demodulate Wi-Fi, so use their spectrum, waterfall or raw
-I/Q views.
+rate sets the span, from 10 MHz at 10 MSps to 80 MHz at 80 MSps. Enter
+frequencies in Hz, for example `2437000000` for Wi-Fi channel 6. General-purpose
+SDR applications cannot demodulate Wi-Fi, so use their spectrum, waterfall or
+raw I/Q views.
 
 An application that serves the stream over a network needs a link that carries
 the stream. Each complex sample takes 4 bytes in `CS16` and 8 bytes in
-`CF32`, so 40 MSps needs 160 MB/s in `CS16`. That is more than a one gigabit
-link carries, so decimate before sending, or use a faster link.
+`CF32`. In `CS16`, 10 MSps needs 40 MB/s and 20 MSps needs 80 MB/s, which fit a
+one gigabit link. The 40 and 80 MSps rates need 160 and 320 MB/s, so decimate
+before sending, or use a faster link.
 
 ## Manual stream test
 

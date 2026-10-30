@@ -8,6 +8,7 @@
 #include <SoapySDR/Formats.h>
 #include <birriasdr.h>
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <deque>
 #include <mutex>
@@ -79,8 +80,12 @@ private:
     static void recoveryCallback(const birriasdr_recovery_event *event, void *ctx);
     void onSamples(const int16_t *iq, uint32_t count);
     void onGap();
+    int readLocked(void *const *buffs, size_t numElems,
+                   std::chrono::steady_clock::time_point deadline, bool &interrupted);
     void markGap();
     void onCallbackFailure();
+    int startWorker();
+    void stopWorker();
 
     static constexpr size_t kMaxQueuedSamples = 16u << 20; /* complex samples, ~64 MiB */
     static constexpr uint32_t kMaxRestarts = 3; /* device or transport faults per stream */
@@ -101,6 +106,12 @@ private:
     std::atomic<bool> active_{false};  /* between activateStream and deactivateStream */
     std::atomic<bool> running_{false}; /* the worker's library read has not returned */
     std::atomic<bool> callbackFailed_{false};
+    std::atomic<bool> restarting_{false}; /* a rate change is restarting the read */
+    /* Held by readStream() for its whole call. A rate change takes it, so it
+     * swaps rates between reads and no read mixes two rates. Taken after the
+     * control lock and before mutex_.
+     */
+    std::mutex readerMutex_;
     std::mutex mutex_;
     std::condition_variable cond_;
     std::deque<std::vector<int16_t>> queue_; /* an empty chunk marks a gap */

@@ -105,9 +105,14 @@ int bs_reader_take(struct bs_reader *reader, uint8_t *bytes, size_t *length, uns
     bs_put_le32(bytes + 36, model->generated++);
     bs_put_le32(bytes + 40, dev->nonce);
     if (model->local_recovery) {
+        bool packed = bs_packet_samples(dev) < BS_PACKET_SAMPLES;
         for (unsigned offset = 0; offset < BS_PAYLOAD_BYTES; offset += 4) {
             /* The last packet is deliberately invalid: a gap must discard it
-             * before the decoder or any application callback can see it. */
+             * before the decoder or any application callback can see it. At
+             * 10 and 20 MSps the last two words of each 16-byte record are
+             * the packer's zero padding. */
+            if (packed && offset % 16 >= 8)
+                continue;
             bs_put_le32(bytes + 44 + offset, model->generated % 3 ?
                 (model->generated << 16) | 7 : UINT32_MAX);
         }
@@ -263,7 +268,8 @@ static void test_case(enum fault fault, int expected, uint32_t rate)
     if (fault == DMA_ERROR) CHECK(dev.stats.dma_errors == 1);
     memset(&model, 0, sizeof(model));
     CHECK(birriasdr_read_sync(&dev, samples, 2048, &received) == 0);
-    CHECK(received == 2048 && dev.stats.samples == 2048 && dev.stats.packets == 1);
+    CHECK(received == 2048 && dev.stats.samples == 2048 &&
+          dev.stats.packets == 2048 / bs_packet_samples(&dev));
     CHECK(!dev.control_error && !dev.touched && model.resets == 1);
     CHECK(pthread_mutex_destroy(&dev.control_mutex) == 0);
 }
@@ -410,7 +416,7 @@ static void local_gap(const struct birriasdr_recovery_event *event, void *contex
 {
     struct local_observation *o = context;
     struct model *m = o->dev->io.context;
-    uint32_t packet_samples = BS_PACKET_SAMPLES;
+    uint32_t packet_samples = bs_packet_samples(o->dev);
     CHECK(event->attempt == ++o->gaps && event->next_sample == o->samples);
     CHECK(event->error == BIRRIASDR_ERROR_OVERRUN);
     CHECK(event->previous.firmware_state == (o->gaps % 2 ? 9u : 8u));
@@ -435,7 +441,7 @@ static void local_gap(const struct birriasdr_recovery_event *event, void *contex
 static void local_samples(const int16_t *iq, uint32_t count, uint64_t first, void *context)
 {
     struct local_observation *o = context;
-    uint32_t packet_samples = BS_PACKET_SAMPLES;
+    uint32_t packet_samples = bs_packet_samples(o->dev);
     CHECK(first == o->samples && count % packet_samples == 0);
     for (uint32_t n = 0; n < count; ++n) {
         uint64_t packet = (first + n) / packet_samples;
@@ -498,11 +504,17 @@ static void test_rate(uint32_t rate)
     test_recovery(BAD_FRAME, false, false, false, false, BIRRIASDR_ERROR_PROTOCOL, 0, rate);
 }
 
+/* Every rate runs the whole suite. 10 and 20 MSps deliver packed payloads,
+ * with half as many samples per packet.
+ */
 int main(void)
 {
-    test_local_recovery(40000000, false);
-    test_local_recovery(40000000, true);
-    test_rate(40000000);
-    puts("stream lifecycle and recovery tests passed");
+    static const uint32_t rates[] = {10000000, 20000000, 40000000, 80000000};
+    for (unsigned i = 0; i < sizeof(rates) / sizeof(rates[0]); ++i) {
+        test_local_recovery(rates[i], false);
+        test_local_recovery(rates[i], true);
+        test_rate(rates[i]);
+    }
+    puts("stream lifecycle and recovery tests passed at 10, 20, 40 and 80 MSps");
     return 0;
 }

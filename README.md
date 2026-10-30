@@ -1,7 +1,7 @@
 # BirriaSDR
 
 Turn a supported USB Wi-Fi dongle into an experimental SDR receiver with
-**14-bit I/Q at 40 MSps complex**.
+**14-bit I/Q at up to 80 MSps complex**.
 
 BirriaSDR ships as `libbirriasdr`, a C11 library with an API modeled on
 librtlsdr, together with a command-line recorder. It talks to the device from
@@ -52,14 +52,15 @@ library embeds its assembled image.
 The tested hardware is the **COMFAST MT7961/MT7921AU dongle (`3574:6211`)**,
 which pairs an MT7961 digital die with an MT7972 analog die. By default the
 receiver is centered on Wi-Fi channel 6 (nominally 2437 MHz) and uses receive
-chain 0 at 40 million complex samples per second. The library can retune
-anywhere in the 2156 to 2610 MHz and 4500 to 6200 MHz bands, even while
-streaming and across bands. At 40 MSps it
-pairs the **40 MHz analog filter with the matching digital bandwidth setting**.
-On the tested board, the measured noise spectrum falls about 3 dB at ±18 MHz.
-The filters do not fully reject signals outside the sampled span, so strong
-signals there can alias into the capture. Treat this as measured behavior
-rather than a calibrated, flat bandwidth guarantee.
+chain 0 at 40 million complex samples per second. You can select 10, 20 or 80
+million instead. The library can retune anywhere in the 2156 to 2610 MHz and
+4500 to 6200 MHz bands, even while streaming and across bands. Each rate pairs
+an **analog filter with a digital bandwidth setting that matches its span**. The
+10 MSps rate uses the 20 MHz analog setting with a narrower, about 10 MHz
+digital filter. At 40 MSps on the tested board, the measured noise spectrum
+falls about 3 dB at ±18 MHz. The filters do not fully reject signals outside the
+sampled span, so strong signals there can alias into the capture. Treat this as
+measured behavior rather than a calibrated, flat bandwidth guarantee.
 
 For more detail, see:
 
@@ -74,8 +75,8 @@ For more detail, see:
 | Hardware | COMFAST dongle `3574:6211`, or a board with MediaTek's generic ID `0e8d:7961`, with an MT7961 digital die and an MT7972 analog die |
 | Frequency tuning | 2156 to 2610 MHz, or 2190 to 2610 MHz on generic-ID boards, and 4500 to 6200 MHz, including live changes and band switches. Sensitivity is unverified; 5 GHz reception was checked from 5250 to 5815 MHz |
 | Tuning step | Nominally 28.61 Hz, using the full 20-bit fraction. Requests are in whole hertz with no Wi-Fi channel restriction. The physical response to fine steps is still unmeasured |
-| Sample rate | 40 MSps complex, fixed |
-| Sampled bandwidth | 40 MHz span with matching nominal 40 MHz analog and digital settings. See [filter characteristics](docs/mt7921.md#filtering) for rolloff and aliasing limits |
+| Sample rate | 10, 20, 40 or 80 MSps complex. The default is 40 MSps |
+| Sampled bandwidth | A span equal to the sample rate, with nominal analog and digital settings for that span. The 10 MSps rate uses the 20 MHz analog setting with a narrower digital filter. See [filter characteristics](docs/mt7921.md#filtering) for rolloff and aliasing limits |
 | Sample resolution | Signed 14-bit I and Q, from −8192 to 8191 |
 | Receive channels | One (chain 0) |
 | Transmit | None, receive only |
@@ -84,7 +85,7 @@ For more detail, see:
 | Automatic gain | Manual overrides can be released. Full AGC control is not implemented |
 | Frequency accuracy | Uncalibrated, with no ppm correction |
 | Reference clock | On-board 40 MHz crystal |
-| Host interface | Bulk transfers over USB 3.0 at about 161 MB/s |
+| Host interface | Bulk transfers over USB 3.0 at about 80 MB/s at 10 MSps, 161 MB/s at 20 and 40 MSps and 322 MB/s at 80 MSps |
 | Output format | Interleaved signed 16-bit I and Q (`cs16`). Buffers from the API are native-endian, and recorder files are little-endian |
 | Firmware | Original 1,632-byte RAM program. No vendor firmware and nothing flashed |
 | Host platforms | Linux, tested on a Raspberry Pi 5, and macOS, tested on an Apple Silicon Mac |
@@ -131,6 +132,13 @@ decimation, and it refuses to overwrite an existing file. Always check the exit
 status. An error means the capture is incomplete or its continuity could not be
 confirmed, even if the file contains samples.
 
+To use another sample rate, pass `--rate` with 10000000, 20000000, 40000000 or
+80000000. The span equals the rate:
+
+```sh
+./build/birria_rx --rate 20000000 narrow.cs16 4000000 manual
+```
+
 To pick a different center frequency, pass it in hertz:
 
 ```sh
@@ -159,7 +167,8 @@ sudo udevadm control --reload-rules && sudo udevadm trigger
 
 The `birria_udp` example sends the samples as raw little-endian CS16 UDP
 datagrams, which any application that reads raw I/Q from a UDP port can
-receive. The stream carries 160 MB/s, so it goes to the local host by default.
+receive. At the default 40 MSps the stream carries 160 MB/s, so it goes to the
+local host by default.
 The [UDP sender guide](docs/udp.md) covers setup, every option, the stream
 format and troubleshooting.
 

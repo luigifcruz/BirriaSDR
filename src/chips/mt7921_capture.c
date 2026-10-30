@@ -12,15 +12,16 @@
  * This module selects the capture tap and clocks; mt7921_rf.c makes that tap
  * receive an external signal. Tap 4 is selected in 0x830ad448[11:8] and uses
  * logical chain 0 (physical RF SPI 1). This is not an antenna-switch control.
- * The backend uses the channel-6 anchor at 40 MSps complex and exposes an
- * low-band retuning interval without changing the capture clocks.
+ * The backend captures 10, 20, 40 or 80 MSps complex. Retuning does not change
+ * the capture clocks.
  *
  * ICAP control is 0x80021090, its start/end offsets are 0x80021098/0x8002109c,
  * and its producer pointer is 0x800210b4. The 256 KiB ring at byte address
- * 0xe0200000 holds 65,536 complex samples: only 1.6384 ms at 40 MSps. Samples
- * occupy four bytes each, little-endian Q then I in 16-bit slots with 14 valid
- * bits per component. Four consecutive complex samples fill 16 bytes without
- * inter-sample padding. Address units must not be confused with byte offsets.
+ * 0xe0200000 holds 256 KiB: only 1.6384 ms at 20 and 40 MSps. Samples occupy
+ * four bytes each, little-endian Q then I in 16-bit slots with 14 valid bits
+ * per component. At 40 and 80 MSps, four consecutive complex samples fill 16
+ * bytes without inter-sample padding. At 10 and 20 MSps, each 16-byte record
+ * holds two samples and two zero words. Address units must not be confused with byte offsets.
  *
  * mt_configure_capture() leaves ICAP stopped (control 0x4f1). The original
  * MCU program waits for GO, starts ICAP with 0x24f3, watches the producer and
@@ -52,9 +53,21 @@
 /* ICAP writes consecutive raw14 Q,I pairs into a 256 KiB circular SRAM.
  * The original MCU program later watches its producer pointer and submits
  * serial DMA descriptors referencing that SRAM directly. This host setup
- * selects receive-only MAC clocks, the chain-0 tap and the dense 40 MSps mode;
- * it leaves capture stopped until bulk-IN requests have been queued.
+ * selects receive-only MAC clocks, the chain-0 tap, its rate and, at 10 and
+ * 20 MSps, the packer; it leaves capture stopped until bulk-IN requests have
+ * been queued.
  */
+/* Read back the bits a rate owns and fail if they did not take, so a setting
+ * the hardware ignored cannot start a capture in the wrong format or rate.
+ */
+static int verify_rate_bits(birriasdr_dev_t *dev, uint32_t address, uint32_t mask,
+                            uint32_t expected)
+{
+    uint32_t value;
+    BS_TRY(bs_read32(dev, BS_MMIO, address, &value));
+    return (value & mask) == expected ? 0 : BIRRIASDR_ERROR_STATE;
+}
+
 int mt_configure_capture(birriasdr_dev_t *dev)
 {
     uint32_t value;
@@ -74,15 +87,32 @@ int mt_configure_capture(birriasdr_dev_t *dev)
     BS_TRY(bs_write32(dev, BS_MMIO, 0x80021090, 0xf1));
     BS_TRY(bs_write32(dev, BS_MMIO, 0x80021098, 0));
     BS_TRY(bs_write32(dev, BS_MMIO, 0x8002109c, 0xfffc));
-    BS_TRY(bs_update32(dev, BS_MMIO, 0x800210b8, 0xf0000, 0x9c000000));
+    /* Bit 17 enables the packer, which keeps one tap sample in four and writes
+     * each pair of kept samples, followed by two zero words, as a 16-byte
+     * record. One record therefore covers eight tap samples: the 80 MSps tap
+     * gives 20 MSps at 160 MB/s and the 40 MSps tap gives 10 MSps at 80 MB/s.
+     * The measured sample counts and USB rates confirm this. The other rates
+     * use the dense format with all bits clear.
+     */
+    BS_TRY(bs_update32(dev, BS_MMIO, 0x800210b8, 0xf0000,
+                        mt_rate_packed(dev->rate) ? 0x9c020000 : 0x9c000000));
+    BS_TRY(verify_rate_bits(dev, 0x800210b8, 0x20000, mt_rate_packed(dev->rate) ? 0x20000 : 0));
     BS_TRY(bs_update32(dev, BS_MMIO, 0x830ad440, 0xff, 0x80000013));
-    BS_TRY(bs_update32(dev, BS_MMIO, 0x830ad448, 0x0fffffff, 0x008c0400));
+    /* Bits 19:18 select the tap rate, 40 MSps << (3 - m): 3 for 40 MSps, 2 for
+     * 80 MSps. 20 and 10 MSps use the 80 and 40 MSps taps with the packer
+     * above, which keeps one sample in four. Tap 4 (bits 11:8) is unchanged.
+     */
+    BS_TRY(bs_update32(dev, BS_MMIO, 0x830ad448, 0x0fffffff,
+                        mt_rate_fast_tap(dev->rate) ? 0x00880400 : 0x008c0400));
+    BS_TRY(verify_rate_bits(dev, 0x830ad448, 0xc0000,
+                            mt_rate_fast_tap(dev->rate) ? 0x80000 : 0xc0000));
     BS_TRY(bs_update32(dev, BS_MMIO, 0x88009004, 0, 0x0f000000));
     return bs_write32(dev, BS_MMIO, 0x80021090, 0x4f1);
 }
 
 /* Release the custom program's GO gate only after the host has queued USB reads.
- * Starting ICAP earlier would consume the ~1.6 ms SRAM capacity during setup.
+ * Starting ICAP earlier would consume the SRAM capacity during setup: only about
+ * 0.8 ms at 80 MSps, 1.6 ms at 20 and 40 MSps and 3.3 ms at 10 MSps.
  */
 int mt_start(birriasdr_dev_t *dev)
 {
@@ -116,7 +146,7 @@ static int validate(uint64_t frequency, uint32_t rate, const struct birriasdr_ga
 {
     if (gain->lna > 5 || gain->lpf > 8 || gain->digital > 12)
         return BIRRIASDR_ERROR_INVALID;
-    if (!mt_frequency_supported(frequency) || rate != 40000000)
+    if (!mt_frequency_supported(frequency) || !mt_rate_supported(rate))
         return BIRRIASDR_ERROR_UNSUPPORTED;
     return 0;
 }

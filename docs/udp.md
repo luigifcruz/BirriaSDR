@@ -19,7 +19,7 @@ Configure the receiving application before you start `birria_udp`:
 1. Select its UDP or network input.
 2. Set it to listen on port `1234`, or the port you pass with `--port`.
 3. Set the sample type to signed 16-bit complex, often labeled Int16 or CS16.
-4. Set the sample rate to 40 MSps (`40000000`).
+4. Set the sample rate to the one passed with `--rate`, 40 MSps (`40000000`) by default.
 5. Start the receiver.
 
 The sender does not connect to a server. The receiver binds its local UDP port
@@ -56,6 +56,7 @@ Run the help command to see the accepted options:
 | `--host HOST` | `127.0.0.1` | Selects the UDP destination address |
 | `--port PORT` | `1234` | Selects a destination port from 1 to 65,535 |
 | `--frequency HZ` | Device default | Selects the receiver center frequency in whole hertz, from 2156 to 2610 MHz (2190 to 2610 MHz on generic-ID boards) or 4500 to 6200 MHz. Another value fails with `UNSUPPORTED` |
+| `--rate SPS` | `40000000` | Selects 10, 20, 40 or 80 MSps complex. The span equals the rate |
 | `--device INDEX` | `0` | Selects a device from the `birria_rx --list` output |
 | `--packet-samples COUNT` | `2048` | Selects 1 to 16,376 complex samples per datagram |
 | `--recovery COUNT` | `3` | Selects the bounded full restart budget, and zero disables recovery |
@@ -88,7 +89,7 @@ The following command sends to another host and disables automatic recovery:
 | Property | Value |
 | --- | --- |
 | Transport | Connected UDP sender with nonblocking writes |
-| Sample rate | 40 MSps complex, fixed |
+| Sample rate | 10, 20, 40 or 80 MSps complex, selected with `--rate`. The default is 40 MSps |
 | Sample layout | Interleaved signed 16-bit I, Q pairs |
 | Source range | −8192 to 8191 for each unshifted 14-bit component |
 | Byte order | Little-endian |
@@ -97,12 +98,13 @@ The following command sends to another host and disables automatic recovery:
 | Maximum payload | 16,376 complex samples, 65,504 bytes |
 | Metadata | None |
 | Return control | None |
-| Payload rate | 160 MB/s, or 1.28 Gbit/s before network overhead |
+| Payload rate | Four bytes per complex sample: 40 MB/s at 10 MSps, 80 MB/s at 20 MSps, 160 MB/s at 40 MSps and 320 MB/s at 80 MSps, before network overhead |
 
 The default destination is the local host because a one gigabit network cannot
-carry the sample payload. Remote streaming needs a faster link, enough sender
-and receiver socket buffering and an MTU appropriate for the selected datagram
-size. The default 8,192-byte payload requires IP fragmentation on a standard
+carry the payload at 40 or 80 MSps. At 10 or 20 MSps it fits, with 320 or 640
+Mbit/s of payload. Remote streaming needs a faster link, enough sender and
+receiver socket buffering and an MTU appropriate for the selected datagram size.
+The default 8,192-byte payload requires IP fragmentation on a standard
 1,500-byte Ethernet MTU.
 
 The samples remain unshifted so the UDP output matches recorder files and
@@ -158,7 +160,7 @@ network submission or cleanup reported an error.
 
 Confirm that the receiver is listening before you start the sender. Check that
 both programs use the same port, that the sample type is signed 16-bit complex
-and that the sample rate is `40000000`. Check the terminal for an open,
+and that the sample rate matches `--rate`. Check the terminal for an open,
 permission or device error.
 
 ### The frequency labels are wrong
@@ -169,9 +171,10 @@ through `--frequency`. The datagrams do not carry the receiver frequency.
 ### The program reports dropped datagrams
 
 Keep the destination on the local host first. Reduce other system load and
-confirm that the receiving application can process a 40 MSps source. A larger
-packet sample count reduces the datagram rate, but larger datagrams increase
-fragmentation and loss risk on a physical network.
+confirm that the receiving application keeps up with the selected rate. A lower
+`--rate` reduces the load. A larger packet sample count reduces the datagram
+rate, but larger datagrams increase fragmentation and loss risk on a physical
+network.
 
 ### The program cannot open the dongle
 

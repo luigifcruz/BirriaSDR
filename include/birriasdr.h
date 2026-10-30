@@ -107,7 +107,9 @@ struct birriasdr_stream_stats {
 /** Samples are interleaved native-endian int16_t I,Q in [-8192,8191].
  * count and first_sample count COMPLEX samples, not scalar components/bytes.
  * The buffer is borrowed until callback return; copy it to retain it. There
- * is no averaging, decimation, left shifting, or floating-point conversion.
+ * is no host-side averaging, decimation, left shifting, or floating-point
+ * conversion. At 10 and 20 MSps the device's capture packer keeps one tap
+ * sample in four before the samples reach the host.
  * Run callbacks promptly: a stalled consumer can overrun the device's SRAM.
  * The center-frequency setter/getter, tuning-range getter, raw-gain mode/code
  * setters, gain-code getter and cancel_async may be called from the callback;
@@ -206,9 +208,15 @@ int birriasdr_set_center_freq(birriasdr_dev_t *dev, uint64_t frequency_hz);
  */
 uint64_t birriasdr_get_center_freq(const birriasdr_dev_t *dev);
 
-/** Stage complex samples/second. MT7921 accepts 40000000 only at present.
- * The sampled span is 40 MHz, using matched nominal 40 MHz analog/digital
- * settings. This is not a calibrated passband or an alias-rejection guarantee.
+/** Stage complex samples/second. MT7921 accepts 10000000, 20000000, 40000000
+ * and 80000000. The sampled span equals the rate, using nominal 20, 40 or 80 MHz
+ * analog and digital settings. 10 MSps uses the 20 MHz analog setting with a
+ * narrower, about 10 MHz digital filter, which suppresses, but does not remove,
+ * energy from just outside the span. USB load is about 80, 160, 160 and
+ * 320 MB/s: the device pads samples at 10 and 20 MSps. Preparation reads back
+ * the filter fields it owns and the rate-dependent capture bits, but cannot
+ * confirm that the 10, 20 and 80 MSps digital class latch took effect.
+ * This is not a calibrated passband or an alias-rejection guarantee.
  */
 int birriasdr_set_sample_rate(birriasdr_dev_t *dev, uint32_t samples_per_second);
 
@@ -255,7 +263,7 @@ int birriasdr_get_tuner_gains(birriasdr_dev_t *dev, int *gains, size_t capacity)
 int birriasdr_set_agc_mode(birriasdr_dev_t *dev, int enabled);
 
 /** Reserved: independently selectable RF filter bandwidth in Hz. The backend
- * applies its fixed nominal 40 MHz profile automatically. This setter remains
+ * applies the nominal profile that matches the sample rate. This setter remains
  * UNSUPPORTED until additional widths and their RF response are qualified.
  */
 int birriasdr_set_tuner_bandwidth(birriasdr_dev_t *dev, uint32_t bandwidth_hz);

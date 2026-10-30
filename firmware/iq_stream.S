@@ -75,9 +75,12 @@ SOFTWARE.
     ori \reg, \reg, (\value & 0xfff)
     .endm
     /* Observe the live capture even while USB is stalled. One address unit is
-     * four SRAM bytes, or one complex sample in the fixed 40 MSps format. The
-     * ring contains 65536 units (1.6384 ms). The 750 us poll guard rejects
-     * ambiguous producer movement before a whole ring can pass unnoticed.
+     * four SRAM bytes: one complex sample at 40 and 80 MSps, or one of the
+     * four words in a packed record at 10 and 20 MSps, where each record holds
+     * two samples and two zero words. The ring contains 65536 units, which
+     * last 1.6384 ms at 20 and 40 MSps and 0.8192 ms at 80 MSps. The 750 us
+     * poll guard, still shorter than the 80 MSps ring, rejects ambiguous
+     * producer movement before a whole ring can pass unnoticed.
      * Scratch r0/r1/r3, preserve the DMA wait counter (r2) and ring registers. */
     .macro observe_source
     load32 $r0, 0x89020068

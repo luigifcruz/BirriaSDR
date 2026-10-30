@@ -18,7 +18,9 @@
  *       32     1  Extended event ID 0xf5.
  *       36     4  Packet sequence, starting at zero for this capture.
  *       40     4  Fresh boot nonce.
- *       44  8192  2,048 raw complex samples, Q16 followed by I16.
+ *       44  8192  2,048 raw complex samples, Q16 followed by I16, or at 10
+ *                 and 20 MSps 1,024 samples, two per 16-byte record followed
+ *                 by two zero words.
  *     8236     4  USB trailer, outside both the RXD0 length and I/Q payload.
  * An opted-in recovering read also accepts a 48-byte gap event. Its length
  * words are 0x3800002c/0x38000014 and extended ID is 0xf6. Header offsets 8/12
@@ -138,5 +140,24 @@ int bs_decode_iq(const uint8_t *raw, int16_t *iq, size_t samples)
         iq[n * 2] = (int16_t)((int32_t)(((word >> 16) & 0x3fff) ^ 0x2000) - 0x2000);
         iq[n * 2 + 1] = (int16_t)((int32_t)((word & 0x3fff) ^ 0x2000) - 0x2000);
     }
+    return 0;
+}
+
+/* The packer used at 10 and 20 MSps (0x800210b8[17]) writes records of four
+ * words: two consecutive output samples, then two zero words. Each output
+ * sample is every fourth tap sample, so one record covers eight tap samples.
+ * Keep the samples, require zero padding, and validate the whole packet before
+ * writing any output.
+ */
+int bs_decode_iq_halved(const uint8_t *raw, int16_t *iq, size_t words)
+{
+    if (words % 4)
+        return BIRRIASDR_ERROR_INVALID;
+    for (size_t n = 0; n < words; n += 4)
+        if (bs_get_le32(raw + n * 4 + 8) || bs_get_le32(raw + n * 4 + 12) ||
+            ((bs_get_le32(raw + n * 4) | bs_get_le32(raw + n * 4 + 4)) & 0xc000c000u))
+            return BIRRIASDR_ERROR_PROTOCOL;
+    for (size_t n = 0; n < words; n += 4)
+        BS_TRY(bs_decode_iq(raw + n * 4, iq + n, 2));
     return 0;
 }

@@ -30,4 +30,12 @@ if(BUILD_TESTING)
     target_compile_features(test_soapy_stream PRIVATE cxx_std_17)
     target_include_directories(test_soapy_stream PRIVATE ${SoapySDR_INCLUDE_DIRS})
     target_link_libraries(test_soapy_stream PRIVATE ${SoapySDR_LIBRARIES})
+    # Offline test of the native rate list, built against stub library functions.
+    add_executable(test_soapy_rates tests/test_soapy_rates.cpp Device.cpp)
+    target_compile_features(test_soapy_rates PRIVATE cxx_std_17)
+    target_include_directories(test_soapy_rates PRIVATE ${PROJECT_SOURCE_DIR}/include
+                                                        ${SoapySDR_INCLUDE_DIRS})
+    target_link_libraries(test_soapy_rates PRIVATE ${SoapySDR_LIBRARIES})
+    target_compile_definitions(test_soapy_rates PRIVATE SOAPY_BIRRIA_TEST_HOOKS)
+    add_test(NAME soapy_rates COMMAND test_soapy_rates)
 endif()

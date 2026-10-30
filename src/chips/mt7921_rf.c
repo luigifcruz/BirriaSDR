@@ -49,8 +49,8 @@
  * dumps. Several bias fields remain unidentified. Do not sort or deduplicate
  * writes: intermediate settings, action strobes and settling waits matter.
  * RF 0x160[31:30]=0 retains the established bootstrap profile during bring-up.
- * mt7921_filter.c then applies the matched analog/digital 40 MHz profile before
- * capture. Keep bootstrap ordering separate from the final bandwidth setting;
+ * mt7921_filter.c then applies the analog/digital profile for the sample rate
+ * before capture. Keep bootstrap ordering separate from the final bandwidth setting;
  * calibrated passband, other bands and full calibration remain unqualified.
  * See docs/mt7921.md for an overview and tests/python-channel6.trace for writes.
  */
@@ -252,7 +252,8 @@ static int initialize_chains(birriasdr_dev_t *dev)
 /* Final receive routing uses chain 0 (physical SPI 1), but its LO comes from
  * physical SPI 0's secondary synthesizer. Keep that idle bank's 1E4[7:6] set:
  * applying the active bank's value to both reproduced the weak-input fault.
- * RF 160[31:30]=0 preserves the bootstrap; mt_configure_filter() widens it later.
+ * RF 160[31:30]=0 preserves the bootstrap; mt_configure_filter() later applies
+ * the profile selected by the sample rate.
  */
 static int select_receive_path(birriasdr_dev_t *dev)
 {
@@ -293,7 +294,7 @@ static int select_receive_path(birriasdr_dev_t *dev)
 int mt_configure_rf(birriasdr_dev_t *dev)
 {
     uint32_t analog, crystal;
-    if (!mt_frequency_supported(dev->frequency) || dev->rate != 40000000)
+    if (!mt_frequency_supported(dev->frequency) || !mt_rate_supported(dev->rate))
         return BIRRIASDR_ERROR_UNSUPPORTED;
     BS_TRY(mt_rf_read(dev, MT_TOP_PORT, 0x2c, &analog));
     BS_TRY(bs_read32(dev, BS_MMIO, 0x02004600, &crystal));
