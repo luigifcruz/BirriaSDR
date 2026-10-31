@@ -13,7 +13,10 @@
 #define BS_TRY(expr) do { int bs_result_ = (expr); if (bs_result_ < 0) return bs_result_; } while (0)
 #define BS_PAYLOAD_BYTES 8192u
 #define BS_PACKET_SAMPLES 2048u
-#define BS_FRAME_BYTES (44u + BS_PAYLOAD_BYTES + 4u)
+/* The event before the payload: 44 header bytes and the four zeros USB takes past
+ * the RXD0 length. */
+#define BS_HEADER_BYTES 48u
+#define BS_FRAME_BYTES (BS_HEADER_BYTES + BS_PAYLOAD_BYTES)
 
 enum bs_space { BS_MMIO, BS_UHW, BS_BRIDGE };
 enum bs_run_state { BS_IDLE, BS_RUNNING, BS_CANCELLING, BS_CONTROL_FAILED };

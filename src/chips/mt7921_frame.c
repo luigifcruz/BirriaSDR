@@ -18,18 +18,17 @@
  *       32     1  Extended event ID 0xf5.
  *       36     4  Packet sequence, starting at zero for this capture.
  *       40     4  Fresh boot nonce.
- *       44  8192  2,048 raw complex samples, Q16 followed by I16, or at 10
+ *       44     4  Zeros, which USB takes past the RXD0 length.
+ *       48  8192  2,048 raw complex samples, Q16 followed by I16, or at 10
  *                 and 20 MSps 1,024 samples, two per 16-byte record followed
  *                 by two zero words.
- *     8236     4  USB trailer, outside both the RXD0 length and I/Q payload.
  * An opted-in recovering read also accepts a 48-byte gap event. Its length
  * words are 0x3800002c/0x38000014 and extended ID is 0xf6. Header offsets 8/12
  * contain source fault 8 or 9 and a monotonically increasing gap count. The
  * sequence is the NEXT data packet's sequence, not another payload. A marker
  * invalidates the preceding data packet, which the stream layer holds back.
  * The nonce and both counters remain continuous across an in-device recovery.
- * The remaining header fields are not interpreted here. The trailer may be a
- * neighboring SRAM word: ignore its contents and never deliver it as a sample.
+ * The remaining header fields are not interpreted here.
  * One 40-byte ROM start ACK (event ID 1, status zero) is accepted; duplicate
  * ACKs are rejected. That event is left over from the boot handoff.
  *
@@ -54,8 +53,7 @@
 
 /* Validate framing before releasing samples. Each event contains a monotonically
  * increasing sequence and fresh boot nonce; both detect gaps, repeats and stale
- * runs. The final USB trailer is outside the I/Q payload and may contain SRAM
- * data, so its value is deliberately not interpreted as another sample.
+ * runs.
  */
 static int consume_frame(struct bs_framer *framer, size_t length)
 {
@@ -83,7 +81,7 @@ static int consume_frame(struct bs_framer *framer, size_t length)
     if (frame[32] != 0xf5 ||
         bs_get_le32(frame + 24) != 0x38000014u + BS_PAYLOAD_BYTES)
         return BIRRIASDR_ERROR_PROTOCOL;
-    BS_TRY(framer->payload(framer->context, frame + 44));
+    BS_TRY(framer->payload(framer->context, frame + BS_HEADER_BYTES));
     ++framer->packets;
     return 0;
 }

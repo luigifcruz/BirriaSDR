@@ -30,7 +30,7 @@ static void make_frame(uint8_t frame[BS_FRAME_BYTES], uint32_t sequence)
     frame[32] = 0xf5;
     bs_put_le32(frame + 36, sequence);
     bs_put_le32(frame + 40, 0x12345678);
-    bs_put_le32(frame + BS_FRAME_BYTES - 4, 0xffffffff); /* Trailer is not I/Q. */
+    bs_put_le32(frame + BS_HEADER_BYTES - 4, 0xffffffff); /* The bytes past RXD0's length are not I/Q. */
 }
 
 /* Every split point must produce exactly one packet, including bytewise headers.
