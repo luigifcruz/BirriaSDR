@@ -107,6 +107,14 @@ int mt_configure_capture(birriasdr_dev_t *dev)
     BS_TRY(verify_rate_bits(dev, 0x830ad448, 0xc0000,
                             mt_rate_fast_tap(dev->rate) ? 0x80000 : 0xc0000));
     BS_TRY(bs_update32(dev, BS_MMIO, 0x88009004, 0, 0x0f000000));
+    /* Bits 22:21 enable two of the receiver's frame detectors. On each detection
+     * the receive path holds its last sample a few times, then reads exact zeros
+     * for about 1.2 us, at any gain mode and on any tap: Wi-Fi frames and strong
+     * analog signals such as FM video trigger it thousands of times a second.
+     * Clearing both stops it, with the level and the other samples unchanged.
+     * Wi-Fi subsystem reset sets them again.
+     */
+    BS_TRY(bs_update32(dev, BS_MMIO, 0x83088200, 0x00600000, 0));
     return bs_write32(dev, BS_MMIO, 0x80021090, 0x4f1);
 }
 
