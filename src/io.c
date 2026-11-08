@@ -46,7 +46,9 @@ int bs_read32(birriasdr_dev_t *dev, enum bs_space space, uint32_t address, uint3
     return dev->io.read32(dev->io.context, space, address, value);
 }
 
-/* Never retry a failed write automatically: some registers trigger actions. */
+/* Never retry a failed write here: some registers trigger actions. The USB
+ * transport resends only a control transfer the device did not answer.
+ */
 int bs_write32(birriasdr_dev_t *dev, enum bs_space space, uint32_t address, uint32_t value)
 {
     return dev->io.write32(dev->io.context, space, address, value);

@@ -67,6 +67,16 @@ timeouts, unexpected states, packet corruption and overruns stay
 distinguishable. The final statistics record the failed stage and any reset
 error separately. A successful cleanup never replaces the primary error.
 
+One transport error is resent instead of reported. When the device does not
+answer a control transfer (`LIBUSB_ERROR_IO`, which macOS reports as
+`kIOReturnNotResponding`), the transport sends the same transfer again, up to
+four times in all, and `control_retries` in the statistics counts each resend.
+Some USB paths drop a small fraction of control transfers this way while the
+next one succeeds. One preparation issues about 2,500 of them, so without the
+resend a single drop ends it. A write whose unanswered attempt did reach the
+device arrives twice with the same value. Timeouts, removal, stalls, short
+transfers and bulk transfers are not resent.
+
 A read owns its acquisition lifecycle until it returns, including any automatic
 restarts. Cancellation crosses threads through an atomic run state. Internal
 control failures use a separate stopping state, so recovery cannot clear an
