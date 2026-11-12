@@ -294,8 +294,11 @@ source_ready:
     swi $r0, [$r8 + 8]
     swi $r0, [$r8 + 12]
     /* Direct DMA from SRAM: no CPU copying or sample conversion.
-     * USB consumes four extra trailer bytes, discarded by the host. The
-     * last packet reads these from the adjacent, mapped SRAM word. */
+     * USB consumes four bytes past the length in the event's RXD0 word. They come
+     * from the header slot, as zeros after its 44 bytes: read from SRAM after the
+     * payload instead, 8,196 bytes in all, the odd tail left the DMA engine one
+     * 8-byte beat off now and then, and a later 128-byte line of the payload came
+     * out with its first unit doubled and its last lost, at every rate. */
     lwi $r0, [$fp + 100]
     sub $r0, $r4, $r0
     andi $r0, $r0, 31
@@ -309,7 +312,7 @@ source_ready:
     swi $r9, [$r0 + 8]
     movi $r1, 0
     swi $r1, [$r0 + 12]
-    load32 $r1, ((44 << 16) | (1 << 14) | (PAYLOAD_BYTES + 4))
+    load32 $r1, ((48 << 16) | (1 << 14) | PAYLOAD_BYTES)
     swi $r1, [$r0 + 4]
     dsb
     addi $r5, $r10, 0
