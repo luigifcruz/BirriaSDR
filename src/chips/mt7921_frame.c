@@ -46,7 +46,8 @@
  * preserving the range -8192..8191. There is no normalization, DC correction,
  * DDC, averaging or decimation here. A new capture format must change this
  * decoder explicitly rather than silently reinterpreting the existing bytes.
- * tests/test_core.c exercises fragmentation, trailers and integrity failures.
+ * tests/test_core.c exercises fragmentation, the bytes past the RXD0 length and
+ * integrity failures.
  */
 #include "internal.h"
 #include <string.h>
