@@ -186,8 +186,9 @@ int main(int argc, char **argv)
     close_result = birriasdr_close(dev);
     if (fclose(recorder.file))
         recorder.error = 1;
-    fprintf(stderr, "Saved %llu complex samples; stream=%s; firmware state=%u; stage=%d; reset=%s\n",
+    fprintf(stderr, "Saved %llu complex samples; stream=%s; firmware state=%u; stage=%d; reset=%s; control retries=%u\n",
              (unsigned long long)recorder.count, birriasdr_strerror(result),
-             stats.firmware_state, stats.stage, birriasdr_strerror(stats.reset_error));
+             stats.firmware_state, stats.stage, birriasdr_strerror(stats.reset_error),
+             stats.control_retries);
     return result || close_result || recorder.error ? 1 : 0;
 }

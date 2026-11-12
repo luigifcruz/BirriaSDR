@@ -11,6 +11,8 @@
 #include <stdbool.h>
 
 #define BS_TRY(expr) do { int bs_result_ = (expr); if (bs_result_ < 0) return bs_result_; } while (0)
+/* Sends of one control transfer when the device does not answer it. */
+#define BS_CONTROL_ATTEMPTS 4
 #define BS_PAYLOAD_BYTES 8192u
 #define BS_PACKET_SAMPLES 2048u
 /* The event before the payload: 44 header bytes and the four zeros USB takes past

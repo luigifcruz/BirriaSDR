@@ -48,12 +48,29 @@ int bs_usb_error(int error)
 
 /* Short control transfers are errors: accepting partial register reads would
  * turn uninitialized bytes into hardware addresses, flags or gain settings.
+ *
+ * LIBUSB_ERROR_IO is a transaction the device did not answer (macOS reports
+ * kIOReturnNotResponding). Some USB paths drop a small fraction of control
+ * transfers this way and the next transfer succeeds; one setup issues about
+ * 2,500 of them, so one drop must not end it. Resend only that error, up to
+ * BS_CONTROL_ATTEMPTS times. A write whose first attempt did reach the device
+ * is delivered twice with the same value. Timeouts, removal, stalls and short
+ * transfers are reported on the first failure.
  */
 int bs_control(birriasdr_dev_t *dev, uint8_t type, uint8_t request,
                uint16_t value, uint16_t index, uint8_t *data, uint16_t length)
 {
-    int result = libusb_control_transfer(dev->handle, type, request, value, index,
+    int result = LIBUSB_ERROR_IO;
+    for (unsigned attempt = 0; attempt < BS_CONTROL_ATTEMPTS; ++attempt) {
+        if (attempt) {
+            ++dev->stats.control_retries;
+            bs_sleep_us(1000);
+        }
+        result = libusb_control_transfer(dev->handle, type, request, value, index,
                                          data, length, 1000);
+        if (result != LIBUSB_ERROR_IO)
+            break;
+    }
     if (result < 0)
         return bs_usb_error(result);
     return result == length ? 0 : BIRRIASDR_ERROR_IO;

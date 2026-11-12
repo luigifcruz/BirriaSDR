@@ -102,6 +102,7 @@ struct birriasdr_stream_stats {
     uint32_t dma_errors;
     enum birriasdr_stage stage;
     int reset_error;
+    uint32_t control_retries; /**< Control transfers resent after the device did not answer. */
 };
 
 /** Samples are interleaved native-endian int16_t I,Q in [-8192,8191].
