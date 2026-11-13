@@ -55,7 +55,7 @@ Run the help command to see the accepted options:
 | --- | --- | --- |
 | `--host HOST` | `127.0.0.1` | Selects the UDP destination address |
 | `--port PORT` | `1234` | Selects a destination port from 1 to 65,535 |
-| `--frequency HZ` | Device default | Selects the receiver center frequency in whole hertz, from 2156 to 2610 MHz (2190 to 2610 MHz on generic-ID boards) or 4500 to 6200 MHz. Another value fails with `UNSUPPORTED` |
+| `--frequency HZ` | Device default | Selects the receiver center frequency in whole hertz, from 2156 to 2610 MHz (2190 to 2610 MHz on generic-ID boards) or 4500 to 6615 MHz. Another value fails with `UNSUPPORTED` |
 | `--rate SPS` | `40000000` | Selects 10, 20, 40 or 80 MSps complex. The span equals the rate |
 | `--device INDEX` | `0` | Selects a device from the `birria_rx --list` output |
 | `--packet-samples COUNT` | `2048` | Selects 1 to 16,376 complex samples per datagram |

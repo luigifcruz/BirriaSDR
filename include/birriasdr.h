@@ -187,7 +187,7 @@ int birriasdr_get_tuning_band(const birriasdr_dev_t *dev, uint32_t index,
                               uint64_t *minimum_hz, uint64_t *maximum_hz);
 
 /** Set a requested center in Hz, without channel-number rounding or host mixing.
- * The MT7921 bands are 2156000000..2610000000 and 4500000000..6200000000 Hz,
+ * The MT7921 bands are 2156000000..2610000000 and 4500000000..6615000000 Hz,
  * inclusive, with nominal 28.6102294921875 and 47.6837158203125 Hz hardware
  * steps; frequency accuracy is uncalibrated. Requests in the gap are UNSUPPORTED.
  * While idle, stage the center for the next read. With CAP_LIVE_TUNING, apply it

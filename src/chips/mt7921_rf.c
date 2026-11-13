@@ -306,6 +306,7 @@ int mt_configure_rf(birriasdr_dev_t *dev)
     BS_TRY(select_receive_path(dev));
     /* Bias tables and the anchor tune have put every band field back to 2.4 GHz. */
     dev->mt7921.high_band = false;
+    dev->mt7921.band_6g = false;
     dev->mt7921.band_valid = true;
     return dev->frequency == MT_RF_ANCHOR_HZ ? 0 : mt_set_frequency(dev, dev->frequency);
 }
