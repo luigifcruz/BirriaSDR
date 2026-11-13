@@ -183,6 +183,9 @@ static int tune_plan(birriasdr_dev_t *dev, unsigned port, bool secondary,
     BS_TRY(mt_rf_update(dev, port, 0x204, 0x00c00000, selector << 22));
     BS_TRY(mt_rf_update(dev, port, 0x21c, 0x00060000, selector << 17));
     BS_TRY(mt_rf_update(dev, port, 0x160, 1u << 29, high_vco ? 1u << 29 : 0));
+    /* The preset sits 0x14 below the frequency word. Only high-band plans set
+     * one, and they always use the secondary bank (0xc94), the one register
+     * select_band() restores. */
     if (plan.preset)
         BS_TRY(mt_rf_update(dev, port, reg - 0x14, 0xff, plan.preset));
     BS_TRY(mt_rf_write(dev, port, 0xcf8, 0x90));

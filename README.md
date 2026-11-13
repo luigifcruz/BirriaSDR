@@ -73,7 +73,7 @@ For more detail, see:
 | Parameter | Current value |
 | --- | --- |
 | Hardware | COMFAST dongle `3574:6211`, or a board with MediaTek's generic ID `0e8d:7961`, with an MT7961 digital die and an MT7972 analog die |
-| Frequency tuning | 2156 to 2610 MHz, or 2190 to 2610 MHz on generic-ID boards, and 4500 to 6615 MHz, including live changes and band switches. Sensitivity is unverified; reception was checked from 5250 to 5815 MHz and from 6135 to 6615 MHz |
+| Frequency tuning | 2156 to 2610 MHz, or 2190 to 2610 MHz on generic-ID boards, and 4500 to 6615 MHz, including live changes and band switches. A live change from 5 GHz into 6 GHz sometimes receives nothing although the call succeeds, see [changing frequency during capture](docs/mt7921.md#changing-frequency-during-capture). Sensitivity is unverified. Reception was checked from 5250 to 5815 MHz and from 6135 to 6615 MHz |
 | Tuning step | Nominally 28.61 Hz, using the full 20-bit fraction. Requests are in whole hertz with no Wi-Fi channel restriction. The physical response to fine steps is still unmeasured |
 | Sample rate | 10, 20, 40 or 80 MSps complex. The default is 40 MSps |
 | Sampled bandwidth | A span equal to the sample rate, with nominal analog and digital settings for that span. The 10 MSps rate uses the 20 MHz analog setting with a narrower digital filter. See [filter characteristics](docs/mt7921.md#filtering) for rolloff and aliasing limits |

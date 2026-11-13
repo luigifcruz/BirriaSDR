@@ -44,6 +44,7 @@
  */
 #define MT_RF_5G_MIN_HZ UINT64_C(4500000000)
 #define MT_RF_5G_MAX_HZ UINT64_C(6615000000)
+/* High-band tunes use VCO preset 0x15 below this and 0x16 from it. */
 #define MT_RF_PRESET_STEP_HZ UINT64_C(6195000000)
 /* Start of the 6 GHz band, where the vendor firmware sets 0xc00[20]. */
 #define MT_RF_6G_PROFILE_HZ UINT64_C(5925000000)
